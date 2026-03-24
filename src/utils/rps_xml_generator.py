@@ -56,7 +56,7 @@ class RPSXMLGenerator:
         valor: float,
         aliquota_iss: float,
         codigo_servico: str = "40303",
-        nbs: str = "1.2301.21.00",  # NBS: Serviços de clínica médica
+        nbs: str = "",  # NBS opcional — deixar vazio para não incluir no XML
         codigo_municipio: str = "4318002",  # IBGE (não usado internamente, usa TOM)
         cidade_tomador: str = CIDADE_SANTA_ROSA_TOM,
         bairro_tomador: str = "NAO INFORMADO",
@@ -91,8 +91,9 @@ class RPSXMLGenerator:
         valor_fmt = _fmt(valor)
         aliquota_fmt = _fmt4(aliquota_iss)
 
-        # NBS deve ser inteiro (sem pontos) conforme XSD xs:integer
-        nbs_int = nbs.replace(".", "")
+        # NBS é opcional — só inclui no XML se informado
+        nbs_int = nbs.replace(".", "") if nbs else ""
+        nbs_tag = f"      <codigo_nbs>{nbs_int}</codigo_nbs>\n" if nbs_int else ""
 
         xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <nfse>
@@ -131,8 +132,7 @@ class RPSXMLGenerator:
     <lista>
       <codigo_local_prestacao_servico>{CIDADE_SANTA_ROSA_TOM}</codigo_local_prestacao_servico>
       <codigo_item_lista_servico>{codigo_servico}</codigo_item_lista_servico>
-      <codigo_nbs>{nbs_int}</codigo_nbs>
-      <descritivo>{descricao}</descritivo>
+{nbs_tag}      <descritivo>{descricao}</descritivo>
       <aliquota_item_lista_servico>{aliquota_fmt}</aliquota_item_lista_servico>
       <situacao_tributaria>00</situacao_tributaria>
       <valor_tributavel>{valor_fmt}</valor_tributavel>
