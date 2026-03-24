@@ -243,6 +243,8 @@ def login_page():
                     st.session_state.username = username
                     st.session_state.token = "authenticated"
                     st.session_state.page = 'dashboard'
+                    # Recarrega notas do banco após login
+                    st.session_state.emitted_nfse = load_emitted_nfse()
                     st.success("✅ Login realizado com sucesso!")
                     st.rerun()
                 else:
