@@ -540,8 +540,8 @@ def render_single_emission():
         with col3:
             item_lista = st.text_input(
                 "Item Lista LC 116/2003 *",
-                value="40303",
-                help="Código IPM do serviço (5 dígitos, sem pontos). Ex: 40303 = Clínicas, sanatórios e congêneres"
+                value="40101",
+                help="Código IPM do serviço (5 dígitos, sem pontos). Ex: 40101 = Serviços médicos especializados"
             )
         
         descricao_servico = st.text_area(
@@ -762,8 +762,8 @@ def render_batch_emission():
                         with col2:
                             item_lista = st.text_input(
                                 "Item Lista LC 116/2003 *",
-                                value="04.01.01",
-                                help="Código do serviço conforme Lista LC 116/2003"
+                                value="40101",
+                                help="Código IPM do serviço (5 dígitos, sem pontos). Ex: 40101 = Serviços médicos especializados"
                             )
                             
                             simples_nacional = st.checkbox("Optante pelo Simples Nacional", value=True)
