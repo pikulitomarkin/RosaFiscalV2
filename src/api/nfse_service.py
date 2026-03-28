@@ -63,17 +63,17 @@ class NFSeService:
         Em produção, isso viria de um banco de dados ou arquivo de configuração.
         """
         return {
-            "cnpj": "05863340000160",
-            "inscricao_municipal": "40865",
-            "razao_social": "NEUROCLIN SERVICOS MEDICOS LTDA",
-            "nome_fantasia": "NEUROCLIN",
-            "logradouro": "RUA FERNANDO FERRARI",
-            "numero": "310",
-            "complemento": "SALA 201",
-            "bairro": "CENTRO",
+            "cnpj": "56169351000185",
+            "inscricao_municipal": "56937",
+            "razao_social": "NATHALIA GABRIELA SERVICOS DE SAUDE LTDA",
+            "nome_fantasia": "NATHALIA GABRIELA",
+            "logradouro": "RUA TARQUINIO DE OLIVEIRA",
+            "numero": "249",
+            "complemento": "",
+            "bairro": "CRUZEIRO",
             "municipio": "SANTA ROSA",
             "uf": "RS",
-            "cep": "98780001",
+            "cep": "98789104",
             "email": "cadastro@dominiocontabil.com.br",
             "telefone": "4836327480"
         }
@@ -348,8 +348,8 @@ class NFSeService:
                     nome_tomador=registro.get("nome", ""),
                     descricao=config_servico.get("descricao", "CONSULTA MEDICA"),
                     valor=float(config_servico.get("valor", 0)),
-                    aliquota_iss=float(config_servico.get("aliquota_iss", 2.6011)),
-                    codigo_servico=config_servico.get("item_lista", "40101"),
+                    aliquota_iss=float(config_servico.get("aliquota_iss", 2.01)),
+                    codigo_servico=config_servico.get("item_lista", "40303"),
                     nbs=config_servico.get("nbs", "1.2301.22.00"),
                     codigo_municipio="4318002",
                     bairro_tomador=registro.get("bairro", "NAO INFORMADO"),

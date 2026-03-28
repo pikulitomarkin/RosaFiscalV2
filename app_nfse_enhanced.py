@@ -556,16 +556,16 @@ def render_single_emission():
                 "Alíquota ISS (%) *",
                 min_value=0.0,
                 max_value=5.0,
-                value=2.0,
-                step=0.1,
+                value=2.01,
+                step=0.01,
                 format="%.2f"
             )
         
         with col3:
             item_lista = st.text_input(
                 "Item Lista LC 116/2003 *",
-                value="40101",
-                help="Código IPM do serviço (5 dígitos, sem pontos). Ex: 40101 = Serviços médicos especializados"
+                value="40303",
+                help="Código IPM do serviço (5 dígitos, sem pontos). Ex: 40303 = Clínicas e congêneres"
             )
         
         descricao_servico = st.text_area(
@@ -870,7 +870,7 @@ def render_batch_emission():
                                 }
                                 
                                 prestador = {
-                                    'cnpj': '59418245000186',
+                                    'cnpj': '56169351000185',
                                 }
                                 
                                 # Barra de progresso
@@ -958,9 +958,9 @@ def render_batch_emission():
                                         # Prestador
                                         app_logger.info(f"[{idx+1}] Criando objeto Prestador...")
                                         prestador_obj = PrestadorServico(
-                                            cnpj='59418245000186',
-                                            inscricao_municipal='8259069',
-                                            razao_social='GABRIEL SALEH SERVICOS MEDICOS LTDA',
+                                            cnpj='56169351000185',
+                                            inscricao_municipal='56937',
+                                            razao_social='NATHALIA GABRIELA SERVICOS DE SAUDE LTDA',
                                             logradouro='Rua Exemplo',
                                             numero='123',
                                             bairro='Centro',
