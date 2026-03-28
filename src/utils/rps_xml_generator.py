@@ -55,8 +55,8 @@ class RPSXMLGenerator:
         descricao: str,
         valor: float,
         aliquota_iss: float,
-        codigo_servico: str = "40101",
-        nbs: str = "1.2301.22.00",  # NBS padrão para serviços médicos especializados
+        codigo_servico: str = "40303",
+        nbs: str = "",  # NBS não vinculado ao 40303 em Santa Rosa-RS
         codigo_municipio: str = "4318002",  # IBGE (não usado internamente, usa TOM)
         cidade_tomador: str = CIDADE_SANTA_ROSA_TOM,
         bairro_tomador: str = "NAO INFORMADO",
