@@ -55,7 +55,7 @@ class RPSXMLGenerator:
         descricao: str,
         valor: float,
         aliquota_iss: float,
-        codigo_servico: str = "40101",
+        codigo_servico: str = "40401",
         nbs: str = "1.2301.22.00",  # NBS padrão para serviços médicos especializados
         codigo_municipio: str = "4318002",  # IBGE (não usado internamente, usa TOM)
         cidade_tomador: str = CIDADE_SANTA_ROSA_TOM,
