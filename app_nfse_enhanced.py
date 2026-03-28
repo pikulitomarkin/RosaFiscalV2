@@ -38,93 +38,262 @@ from src.api.ipm_soap_client import IPMSoapClient as _IPMSoapClient
 
 def _gerar_pdf_nota_ipm(nota: dict) -> bytes:
     """
-    Gera PDF da NFS-e IPM a partir dos dados armazenados na sessão (sem XML).
-    Usa ReportLab para montar um documento com as informações da nota.
+    Gera PDF da NFS-e IPM no layout idêntico ao emitido pela Prefeitura de Santa Rosa-RS.
     """
     import io
     from reportlab.lib.pagesizes import A4
-    from reportlab.lib.units import cm
+    from reportlab.lib.units import cm, mm
     from reportlab.lib import colors
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
-                            leftMargin=1.5*cm, rightMargin=1.5*cm,
-                            topMargin=1.5*cm, bottomMargin=1.5*cm)
+                            leftMargin=1.2*cm, rightMargin=1.2*cm,
+                            topMargin=1.2*cm, bottomMargin=1.2*cm)
     styles = getSampleStyleSheet()
-    titulo = ParagraphStyle('titulo', parent=styles['Heading1'],
-                            fontSize=13, alignment=TA_CENTER, spaceAfter=4)
-    subtitulo = ParagraphStyle('sub', parent=styles['Normal'],
-                               fontSize=9, alignment=TA_CENTER, spaceAfter=10)
-    label = ParagraphStyle('label', parent=styles['Normal'],
-                           fontSize=8, textColor=colors.grey)
-    valor_style = ParagraphStyle('valor', parent=styles['Normal'], fontSize=10)
 
-    AZUL = colors.HexColor("#1a3a6e")
-    CINZA = colors.HexColor("#f4f4f4")
+    AZUL   = colors.HexColor("#1a3a6e")
+    CINZA  = colors.HexColor("#f2f2f2")
+    BRANCO = colors.white
+    PRETO  = colors.black
 
-    numero = nota.get('numero', 'N/A')
-    chave = nota.get('chave_acesso', '')
-    data_emissao = nota.get('data_emissao', '')
-    tomador_nome = nota.get('tomador_nome', 'N/A')
-    tomador_cpf = nota.get('tomador_cpf', 'N/A')
-    valor = nota.get('valor', 0)
-    iss = nota.get('iss', 0)
-    link = nota.get('link_nfse', '')
+    def P(text, fs=7, bold=False, align=TA_LEFT, color=PRETO, font=None, leading=None):
+        fn = font or ('Helvetica-Bold' if bold else 'Helvetica')
+        return Paragraph(text, ParagraphStyle('_', parent=styles['Normal'],
+                         fontSize=fs, fontName=fn, textColor=color,
+                         alignment=align, leading=leading or (fs + 2)))
+
+    def label(text):
+        return P(text, fs=6, color=colors.HexColor("#555555"))
+
+    def secao(text):
+        return Table([[P(text, fs=8, bold=True, color=BRANCO)]],
+                     colWidths=[W],
+                     style=[('BACKGROUND', (0,0), (-1,-1), AZUL),
+                            ('TOPPADDING', (0,0), (-1,-1), 3),
+                            ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+                            ('LEFTPADDING', (0,0), (-1,-1), 6)])
+
+    def grid_style(alternado=True):
+        base = [('BOX', (0,0), (-1,-1), 0.5, PRETO),
+                ('INNERGRID', (0,0), (-1,-1), 0.3, colors.lightgrey),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                ('TOPPADDING', (0,0), (-1,-1), 2),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+                ('LEFTPADDING', (0,0), (-1,-1), 5),
+                ('RIGHTPADDING', (0,0), (-1,-1), 3)]
+        return TableStyle(base)
+
+    W = 18.6 * cm
+
+    # — Dados da nota —
+    numero       = str(nota.get('numero', 'N/A'))
+    chave        = str(nota.get('chave_acesso', ''))
+    data_emissao = str(nota.get('data_emissao', ''))
+    tomador_nome = str(nota.get('tomador_nome', 'NI'))
+    tomador_cpf  = str(nota.get('tomador_cpf', 'NI'))
+    tomador_cep  = str(nota.get('tomador_cep', 'NI'))
+    tomador_bairro    = str(nota.get('tomador_bairro', 'NI'))
+    tomador_logradouro= str(nota.get('tomador_logradouro', 'NI'))
+    valor        = float(nota.get('valor', 0))
+    aliquota     = float(nota.get('aliquota_iss', 2.01))
+    descricao    = str(nota.get('descricao', 'CONSULTA MEDICA'))
+    codigo_serv  = str(nota.get('codigo_servico', '40303'))
+    link         = str(nota.get('link_nfse', '') or '')
+
+    data_fato = data_emissao.split()[0] if data_emissao else ''
+
+    # Formatar CPF/CNPJ
+    cpf_c = tomador_cpf.replace('.','').replace('-','').replace('/','')
+    if len(cpf_c) == 11:
+        cpf_fmt = f"{cpf_c[:3]}.{cpf_c[3:6]}.{cpf_c[6:9]}-{cpf_c[9:]}"
+    elif len(cpf_c) == 14:
+        cpf_fmt = f"{cpf_c[:2]}.{cpf_c[2:5]}.{cpf_c[5:8]}/{cpf_c[8:12]}-{cpf_c[12:]}"
+    else:
+        cpf_fmt = tomador_cpf
+
+    valor_fmt     = f"{valor:.2f}".replace('.', ',')
+    aliquota_fmt  = f"{aliquota:.2f}%"
+
+    # Prestador (fixo para Nathalia Gabriela)
+    PR_NOME  = "NATHALIA GABRIELA SERVICOS DE SAUDE LTDA"
+    PR_CNPJ  = "56.169.351/0001-85"
+    PR_END   = "RUA TARQUÍNIO DE OLIVEIRA - 249"
+    PR_CEP   = "98.789-104"
+    PR_BAIRRO= "CRUZEIRO"
+    PR_MUN   = "SANTA ROSA - RIO GRANDE DO SUL"
+    PR_IM    = "56937"
+    PR_EMAIL = "cadastro@dominiocontabil.com.br"
+    PR_TEL   = "(48) 3632-7480 - Celular: (48) 93632-7480"
 
     story = []
 
-    # Cabeçalho
-    story.append(Paragraph("NOTA FISCAL DE SERVIÇOS ELETRÔNICA - NFS-e", titulo))
-    story.append(Paragraph("Município de Santa Rosa - RS", subtitulo))
-    story.append(Spacer(1, 0.3*cm))
+    # ── 1. CABEÇALHO: Prestador (esq) + NFS-e info (dir) ──────────────────────
+    prest_inner = Table([
+        [P(PR_NOME, fs=8, bold=True)],
+        [P(f"CNPJ: {PR_CNPJ}", fs=7)],
+        [P(f"{PR_END},", fs=7)],
+        [P(f"CEP: {PR_CEP} - Bairro: {PR_BAIRRO}", fs=7)],
+        [P(f"Município: {PR_MUN}", fs=7)],
+        [P(f"Insc. Municipal: {PR_IM} - Insc. Estadual:", fs=7)],
+        [P(f"Email: {PR_EMAIL} Telefone: {PR_TEL}", fs=7)],
+    ], colWidths=[12.8*cm],
+       style=[('TOPPADDING',(0,0),(-1,-1),1), ('BOTTOMPADDING',(0,0),(-1,-1),1),
+              ('LEFTPADDING',(0,0),(-1,-1),4)])
 
-    # Tabela principal de dados
-    dados = [
-        [Paragraph("<b>Número da NFS-e</b>", label), Paragraph(str(numero), valor_style),
-         Paragraph("<b>Data de Emissão</b>", label), Paragraph(str(data_emissao), valor_style)],
-        [Paragraph("<b>Tomador</b>", label), Paragraph(str(tomador_nome), valor_style),
-         Paragraph("<b>CPF/CNPJ</b>", label), Paragraph(str(tomador_cpf), valor_style)],
-        [Paragraph("<b>Valor do Serviço</b>", label), Paragraph(f"R$ {float(valor):.2f}".replace('.', ','), valor_style),
-         Paragraph("<b>Valor ISS</b>", label), Paragraph(f"R$ {float(iss):.2f}".replace('.', ','), valor_style)],
-    ]
-    tabela = Table(dados, colWidths=[3.5*cm, 6*cm, 3.5*cm, 5*cm])
-    tabela.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), CINZA),
-        ('ROWBACKGROUND', (0, 0), (-1, -1), [CINZA, colors.white, CINZA]),
-        ('GRID', (0, 0), (-1, -1), 0.3, colors.lightgrey),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING', (0, 0), (-1, -1), 5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+    nfse_inner = Table([
+        [label("Número da NFS-e"), label("Situação")],
+        [P(numero, fs=14, bold=True, align=TA_CENTER), P("Emitida", fs=8, bold=True)],
+        [label("Tipo"), P("")],
+        [P("Preenchido", fs=7), P("")],
+        [label("Autenticidade"), P("")],
+        [P("Ver rodapé", fs=6, color=colors.blue), P("")],
+    ], colWidths=[2.8*cm, 3.0*cm],
+       style=[('TOPPADDING',(0,0),(-1,-1),1), ('BOTTOMPADDING',(0,0),(-1,-1),1),
+              ('LEFTPADDING',(0,0),(-1,-1),4)])
+
+    header = Table([[prest_inner, nfse_inner]], colWidths=[12.8*cm, 5.8*cm])
+    header.setStyle(TableStyle([
+        ('BOX', (0,0), (-1,-1), 0.6, PRETO),
+        ('LINEBEFORE', (1,0), (1,-1), 0.5, PRETO),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
     ]))
-    story.append(tabela)
-    story.append(Spacer(1, 0.5*cm))
+    story.append(header)
+    story.append(Spacer(1, 1.5*mm))
 
-    # Chave de acesso
-    if chave:
-        story.append(Paragraph("<b>Chave de Acesso / Código Verificador</b>", label))
-        story.append(Paragraph(str(chave), ParagraphStyle('chave', parent=styles['Normal'],
-                                                           fontSize=9, fontName='Courier',
-                                                           backColor=CINZA, spaceAfter=6)))
-        story.append(Spacer(1, 0.3*cm))
+    # ── 2. TÍTULO ──────────────────────────────────────────────────────────────
+    titulo_t = Table([[P("Nota Fiscal de Serviço Eletrônica - Série NFS-e",
+                         fs=10, bold=True, align=TA_CENTER)]],
+                     colWidths=[W])
+    titulo_t.setStyle(TableStyle([
+        ('BOX', (0,0), (-1,-1), 0.6, PRETO),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+    ]))
+    story.append(titulo_t)
+    story.append(Spacer(1, 1.5*mm))
 
-    # Link do portal
+    # ── 3. LOGOS + IDENTIFICADOR ──────────────────────────────────────────────
+    id_inner = Table([
+        [label("Identificador")],
+        [P(chave, fs=6.5, font='Courier', align=TA_CENTER)],
+    ], colWidths=[7.0*cm],
+       style=[('TOPPADDING',(0,0),(-1,-1),1), ('BOTTOMPADDING',(0,0),(-1,-1),1)])
+
+    logos_t = Table([[
+        P("ESTADO DO RIO GRANDE DO SUL\nPREFEITURA MUNICIPAL DE SANTA ROSA\nSECRETARIA MUNICIPAL DE FAZENDA",
+          fs=7, bold=True),
+        P("SANTA ROSA\nBERÇO NACIONAL DA SOJA", fs=7, bold=True, align=TA_CENTER),
+        P("NFS-e\nNacional", fs=8, bold=True, align=TA_CENTER),
+        id_inner,
+    ]], colWidths=[5.0*cm, 3.0*cm, 3.6*cm, 7.0*cm])
+    logos_t.setStyle(TableStyle([
+        ('BOX', (0,0), (-1,-1), 0.6, PRETO),
+        ('INNERGRID', (0,0), (-1,-1), 0.4, PRETO),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('LEFTPADDING', (0,0), (-1,-1), 6),
+    ]))
+    story.append(logos_t)
+    story.append(Spacer(1, 1.5*mm))
+
+    # ── 4. DATAS ───────────────────────────────────────────────────────────────
+    datas_t = Table([
+        [label("Data Fato Gerador"), label("Data/Hora Emissão")],
+        [P(data_fato, fs=8, bold=True), P(data_emissao, fs=8, bold=True)],
+    ], colWidths=[W/2, W/2])
+    datas_t.setStyle(grid_style())
+    story.append(datas_t)
+    story.append(Spacer(1, 1.5*mm))
+
+    # ── 5. TOMADOR ─────────────────────────────────────────────────────────────
+    story.append(secao("TOMADOR DO SERVIÇO"))
+    tomador_t = Table([
+        [label("Nome/Razão Social"), label(""), label("CPF/CNPJ")],
+        [P(tomador_nome, fs=7.5), P(""), P(cpf_fmt, fs=7.5)],
+        [label("Endereço"), label("Número"), label("Complemento")],
+        [P(tomador_logradouro, fs=7), P("NI", fs=7), P("NÃO INFORMADO", fs=7)],
+        [label("Bairro"), label("CEP"), label("Cidade")],
+        [P(tomador_bairro, fs=7), P(tomador_cep, fs=7), P("Santa Rosa - RS", fs=7)],
+        [label("País"), label("Telefone"), label("Email")],
+        [P("Brasil - BR - 1058", fs=7), P("Não Informado", fs=7), P("Não Informado", fs=7)],
+    ], colWidths=[W*0.45, W*0.20, W*0.35])
+    tomador_t.setStyle(grid_style())
+    story.append(tomador_t)
+    story.append(Spacer(1, 1.5*mm))
+
+    # ── 6. SERVIÇOS ────────────────────────────────────────────────────────────
+    story.append(secao("DESCRIÇÃO DOS SERVIÇOS PRESTADOS"))
+    cw = [1.9*cm, 2.1*cm, 1.7*cm, 2.1*cm, 2.3*cm, 2.3*cm, 2.3*cm, 3.9*cm]
+    servico_t = Table([
+        [label("Serviço"), label("Local Prestação"), label("Alíquota"),
+         label("Situação Trib."), label("Valor Serviço"),
+         label("Desc. Incondic."), label("Valor Dedução"), label("Valor ISS")],
+        [P(codigo_serv, fs=7, bold=True), P("8847", fs=7, bold=True),
+         P(aliquota_fmt, fs=7, bold=True), P("TI", fs=7, bold=True),
+         P(valor_fmt, fs=7, bold=True), P("0,00", fs=7),
+         P("0,00", fs=7), P("SIMPLES NACIONAL", fs=6.5, bold=True)],
+    ], colWidths=cw)
+    servico_t.setStyle(grid_style())
+    story.append(servico_t)
+
+    desc_t = Table([
+        [label("Descrição do Serviço:")],
+        [P(descricao, fs=7)],
+    ], colWidths=[W])
+    desc_t.setStyle(TableStyle([
+        ('BOX', (0,0), (-1,-1), 0.5, PRETO),
+        ('TOPPADDING', (0,0), (-1,-1), 2),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('LEFTPADDING', (0,0), (-1,-1), 5),
+    ]))
+    story.append(desc_t)
+    story.append(Spacer(1, 1.5*mm))
+
+    # ── 7. TOTAIS ──────────────────────────────────────────────────────────────
+    cw5 = [W/5]*5
+    totais_t = Table([
+        [label("Valor Total"), label("Desc. Incondicional"), label("Dedução"),
+         label("Base de Cálculo"), label("ISSQN")],
+        [P(valor_fmt, fs=7, bold=True), P("0,00", fs=7), P("0,00", fs=7),
+         P(valor_fmt, fs=7, bold=True), P("SIMPLES NACIONAL", fs=6.5, bold=True)],
+        [label("ISSRF"), label("IR"), label("INSS"), label("CSLL"), label("COFINS")],
+        [P("0,00", fs=7)]*5,
+        [label("PIS"), label("Outras Retenções"), label("Total Trib. Federais"),
+         label("Desc. Condicional"), label("Valor Líquido")],
+        [P("0,00", fs=7), P("0,00", fs=7), P("0,00", fs=7),
+         P("0,00", fs=7), P(valor_fmt, fs=7, bold=True)],
+    ], colWidths=cw5)
+    totais_t.setStyle(grid_style())
+    story.append(totais_t)
+    story.append(Spacer(1, 3*mm))
+
+    # ── 8. RODAPÉ ──────────────────────────────────────────────────────────────
+    s_rod = ParagraphStyle('rod', parent=styles['Normal'], fontSize=6.5, leading=9)
+    s_chave = ParagraphStyle('chave', parent=styles['Normal'], fontSize=7,
+                             fontName='Courier', leading=10,
+                             backColor=colors.HexColor("#eeeeee"))
+
+    story.append(P(f"Descrição dos subitens da Lista de Serviço em acordo com a Lei Complementar 116/03.", fs=6.5))
+    story.append(P(f"{codigo_serv} - Clínicas, sanatórios, manicômios, casas de saúde, prontos-socorros, ambulatórios e congêneres.", fs=6.5))
+    story.append(Spacer(1, 1*mm))
+    story.append(P("TI - Tributada Integralmente", fs=6.5))
+    story.append(P(f"({codigo_serv}) Serviço tributado no município do prestador", fs=6.5))
+    story.append(P("Contribuinte enquadrado como Simples - Homologado de ISS ou ISS em regime estimado/fixo", fs=6.5))
+    story.append(Spacer(1, 2*mm))
+
     if link:
-        story.append(Paragraph("<b>Consulta de Autenticidade</b>", label))
-        story.append(Paragraph(f"<link href='{link}'>{link}</link>",
-                                ParagraphStyle('link_style', parent=styles['Normal'],
-                                               fontSize=8, textColor=colors.blue)))
+        story.append(P("A veracidade das informações declaradas na NFS-e podem ser consultadas no site:", fs=6.5))
+        story.append(Paragraph(f"<link href='{link}' color='blue'>{link}</link>", s_rod))
+        story.append(Spacer(1, 2*mm))
 
-    story.append(Spacer(1, 1*cm))
-    story.append(Paragraph(
-        "Documento gerado pelo sistema AuraFiscal. "
-        "Consulte a autenticidade no portal da Prefeitura de Santa Rosa.",
-        ParagraphStyle('rodape', parent=styles['Normal'], fontSize=7,
-                       textColor=colors.grey, alignment=TA_CENTER)
-    ))
+    story.append(P("Chave de Acesso NFS-e Nacional", fs=6, color=colors.grey))
+    story.append(Paragraph(chave, s_chave))
 
     doc.build(story)
     buf.seek(0)
@@ -643,8 +812,14 @@ def render_single_emission():
                             'data_emissao': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
                             'tomador_nome': tomador_nome,
                             'tomador_cpf': tomador_cpf,
+                            'tomador_bairro': tomador_bairro or 'NI',
+                            'tomador_cep': tomador_cep or 'NI',
+                            'tomador_logradouro': tomador_logradouro or 'NI',
                             'valor': valor_servico,
                             'iss': valor_servico * (aliquota_iss / 100),
+                            'aliquota_iss': aliquota_iss,
+                            'descricao': hash_paciente if hash_paciente and hash_paciente.strip() else descricao_servico,
+                            'codigo_servico': item_lista.replace(".", ""),
                             'xml_path': None,
                             'pdf_path': None,
                             'link_nfse': ipm_r.link_nfse,
@@ -1042,8 +1217,14 @@ def render_batch_emission():
                                                 'data_emissao': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
                                                 'tomador_nome': record.get('nome', 'N/A'),
                                                 'tomador_cpf': record.get('cpf', 'N/A'),
+                                                'tomador_bairro': record.get('bairro', 'NI'),
+                                                'tomador_cep': record.get('cep', 'NI'),
+                                                'tomador_logradouro': record.get('logradouro', 'NI'),
                                                 'valor': float(valor_nota),
                                                 'iss': float(valor_nota) * (aliquota_iss / 100),
+                                                'aliquota_iss': aliquota_iss,
+                                                'descricao': config_servico.get('descricao', 'CONSULTA MEDICA'),
+                                                'codigo_servico': config_servico.get('item_lista', '40303'),
                                                 'xml_path': None,
                                                 'pdf_path': None,
                                                 'link_nfse': resultado.get('link_nfse'),
