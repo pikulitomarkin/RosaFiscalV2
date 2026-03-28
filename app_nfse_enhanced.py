@@ -564,8 +564,8 @@ def render_single_emission():
         with col3:
             item_lista = st.text_input(
                 "Item Lista LC 116/2003 *",
-                value="40401",
-                help="Código IPM do serviço (5 dígitos, sem pontos). Ex: 40401 = Instrumentação cirúrgica"
+                value="40101",
+                help="Código IPM do serviço (5 dígitos, sem pontos). Ex: 40101 = Serviços médicos especializados"
             )
         
         descricao_servico = st.text_area(
