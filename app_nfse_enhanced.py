@@ -961,8 +961,8 @@ def render_batch_emission():
                         with col2:
                             item_lista = st.text_input(
                                 "Item Lista LC 116/2003 *",
-                                value="40401",
-                                help="Código IPM do serviço (5 dígitos, sem pontos). Ex: 40401 = Instrumentação cirúrgica"
+                                value="40303",
+                                help="Código IPM do serviço (5 dígitos, sem pontos). Ex: 40303 = Análises clínicas (vinculado ao NBS 1.2301.21.00 em Santa Rosa-RS)"
                             )
                             
                             simples_nacional = st.checkbox("Optante pelo Simples Nacional", value=True)
