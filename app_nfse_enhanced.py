@@ -941,12 +941,12 @@ def render_batch_emission():
                         
                         with col1:
                             valor_servico = st.number_input(
-                                "💰 Valor Padrão/Fallback (R$) *",
-                                min_value=0.01,
-                                value=89.00,
+                                "💰 Valor Fixo (R$) — 0 = usar valor do PDF",
+                                min_value=0.0,
+                                value=0.0,
                                 step=1.00,
                                 format="%.2f",
-                                help="Usado apenas quando o PDF não contiver valor. Se o PDF tiver valor, ele será prioritário."
+                                help="Se preenchido (> 0), todas as notas serão emitidas com esse valor. Se deixar em 0, cada nota usará o valor extraído do PDF."
                             )
                             
                             aliquota_iss = st.number_input(
@@ -1003,18 +1003,24 @@ def render_batch_emission():
                             st.metric("Registros", min(limite_lote, len(valid_records)))
                         
                         with col2:
-                            # Calcula valor total usando o valor do PDF de cada registro ou o valor padrão
+                            # Calcula valor total: se valor fixo definido usa ele; senão usa valor do PDF de cada registro
                             registros_resumo = valid_records[:min(limite_lote, len(valid_records))]
-                            valor_total = sum(r.get('valor') or valor_servico for r in registros_resumo)
+                            if valor_servico > 0:
+                                valor_total = valor_servico * len(registros_resumo)
+                            else:
+                                valor_total = sum(r.get('valor') or 0 for r in registros_resumo)
                             st.metric("Valor Total", f"R$ {valor_total:,.2f}")
-                        
+
                         with col3:
                             iss_total = valor_total * (aliquota_iss / 100)
                             st.metric("ISS Total", f"R$ {iss_total:,.2f}")
-                        
+
                         with col4:
-                            com_valor_pdf = sum(1 for r in registros_resumo if r.get('valor'))
-                            st.metric("Com valor do PDF", f"{com_valor_pdf}/{len(registros_resumo)}")
+                            if valor_servico > 0:
+                                st.metric("Fonte do valor", "Fixo (formulário)")
+                            else:
+                                com_valor_pdf = sum(1 for r in registros_resumo if r.get('valor'))
+                                st.metric("Com valor do PDF", f"{com_valor_pdf}/{len(registros_resumo)}")
                         
                         st.markdown("---")
                         
@@ -1170,9 +1176,15 @@ def render_batch_emission():
                                             else:
                                                 discriminacao_com_hash = f"Hash do Paciente: {hash_paciente}"
                                         
-                                        # Serviço — usa o valor do PDF; se não disponível, usa o valor padrão do formulário
-                                        valor_nota = record.get('valor') or valor_servico
-                                        app_logger.info(f"[{idx+1}] Criando objeto Servico (valor={valor_nota}, fonte={'PDF' if record.get('valor') else 'formulário'})...")
+                                        # Serviço — se valor fixo foi definido no formulário usa ele para todos;
+                                        # caso contrário usa o valor extraído do PDF de cada registro
+                                        if valor_servico > 0:
+                                            valor_nota = valor_servico
+                                            fonte_valor = "formulário (fixo)"
+                                        else:
+                                            valor_nota = record.get('valor') or 0
+                                            fonte_valor = "PDF"
+                                        app_logger.info(f"[{idx+1}] Criando objeto Servico (valor={valor_nota}, fonte={fonte_valor})...")
                                         servico_obj = Servico(
                                             valor_servico=valor_nota,
                                             aliquota_iss=aliquota_iss,
