@@ -16,13 +16,13 @@ class NFSeEmissao(Base):
     id = Column(Integer, primary_key=True, index=True)
     
     # Identificação
-    hash_transacao = Column(String(64), unique=True, index=True, nullable=False)
+    hash_transacao = Column(String(128), unique=True, index=True, nullable=False)
     numero_nfse = Column(String(20), index=True)
-    protocolo = Column(String(50), index=True)
+    protocolo = Column(String(128), index=True)
     codigo_verificacao = Column(String(20))
     
     # Tomador
-    cpf_tomador = Column(String(11), index=True, nullable=False)
+    cpf_tomador = Column(String(14), index=True, nullable=False)
     nome_tomador = Column(String(150), nullable=False)
     
     # Status
@@ -41,7 +41,7 @@ class NFSeEmissao(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=func.now())
     
     # Metadata
-    url_nfse = Column(String(255))
+    url_nfse = Column(String(1000))
     usuario = Column(String(50))
     
     def __repr__(self):

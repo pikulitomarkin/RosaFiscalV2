@@ -52,8 +52,25 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_database():
     """Inicializa o banco de dados criando todas as tabelas."""
+    from sqlalchemy import text
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+        # Amplia colunas em bases já existentes (create_all não altera tamanho)
+        if settings.DATABASE_URL.startswith("postgresql"):
+            alters = [
+                "ALTER TABLE nfse_emissoes ALTER COLUMN hash_transacao TYPE VARCHAR(128)",
+                "ALTER TABLE nfse_emissoes ALTER COLUMN protocolo TYPE VARCHAR(128)",
+                "ALTER TABLE nfse_emissoes ALTER COLUMN cpf_tomador TYPE VARCHAR(14)",
+                "ALTER TABLE nfse_emissoes ALTER COLUMN url_nfse TYPE VARCHAR(1000)",
+            ]
+            for stmt in alters:
+                try:
+                    await conn.execute(text(stmt))
+                except Exception:
+                    # Tabela/coluna inexistente ou já no tamanho certo — ignora
+                    pass
 
 
 async def close_database():
