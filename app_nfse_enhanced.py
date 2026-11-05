@@ -1726,15 +1726,20 @@ def render_settings():
 
     # IPM primeiro: único bloqueio do cutover; não esconder abaixo do prestador
     st.markdown("### 🔑 Webservice IPM (Atende.Net)")
-    st.caption("Senha usada na emissão das NFS-e. Salva no volume do servidor (não no Git).")
+    st.caption(
+        "É a **mesma senha de acesso ao sistema NFS-e** da prefeitura "
+        "(Portal / https://nfse-santarosa.atende.net/), não a senha deste dashboard. "
+        "Salva no volume do servidor (não no Git)."
+    )
     ipm_user = get_ipm_usuario()
     senha_ok = ipm_senha_configurada()
     if senha_ok:
         st.success("Senha IPM já configurada neste servidor.")
     else:
         st.error(
-            "Senha IPM ainda não configurada — a emissão NFS-e fica bloqueada até salvar. "
-            "Peça a senha do webservice Atende.Net (prefeitura / contabilidade)."
+            "Senha IPM ainda não configurada — emissão bloqueada. "
+            "Use a senha do login CNPJ no portal NFS-e Santa Rosa "
+            "(https://nfse-santarosa.atende.net/) ou peça à contabilidade."
         )
 
     with st.form("ipm_credentials_form"):
