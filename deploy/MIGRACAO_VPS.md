@@ -12,7 +12,7 @@
 - Docker habilitado no boot (`systemctl enable docker`)
 - Scripts: `set_ipm_senha.sh`, `validate_migracao.sh`, `test_ipm_auth.py`
 
-Login admin (pós-restauração): `admin` / `Nathalia@2026` (troque após o cutover).
+Login admin: usuário `admin` (senha definida na restauração — troque após o cutover; não versionar senhas).
 
 ### Definir IPM_SENHA
 **Preferencial — dashboard:** https://vps12436.panel.icontainer.site/ → Configurações → Webservice IPM → salvar → Testar conexão IPM.
