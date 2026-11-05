@@ -124,3 +124,9 @@ nfse_emitidas.json
 # ==================== Arquivos de swagger/spec ====================
 swagger.html
 api-spec.json
+
+# Persistência local/VPS
+data/
+!data/.gitkeep
+logs/
+!logs/.gitkeep

@@ -516,27 +516,39 @@ def init_session_state():
         st.session_state.last_emission = None
 
 
+def _sync_database_dsn() -> str:
+    """DSN síncrono (psycopg2) a partir de DATABASE_URL / settings."""
+    raw = os.getenv("DATABASE_URL") or getattr(settings, "DATABASE_URL", "")
+    return str(raw).replace("postgresql+asyncpg://", "postgresql://", 1)
+
+
 def autenticar_usuario_db(username: str, password: str) -> bool:
-    """Autentica usuário consultando a tabela usuarios no PostgreSQL."""
+    """Autentica usuário via tabela usuarios (Postgres) ou fallback ADMIN_*."""
+    dsn = _sync_database_dsn()
+    if dsn.startswith("postgresql://"):
+        try:
+            conn = psycopg2.connect(dsn)
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT password_hash, is_active FROM usuarios WHERE username = %s",
+                (username,)
+            )
+            row = cur.fetchone()
+            conn.close()
+            if not row:
+                return False
+            password_hash, is_active = row
+            if not is_active:
+                return False
+            return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+        except Exception as e:
+            app_logger.error(f"Erro ao autenticar via banco: {e}")
+
+    # Fallback: credenciais ADMIN_* do .env (útil em bootstrap / SQLite)
     try:
-        conn = psycopg2.connect(
-            "postgresql://postgres:hWhjRLsFAxbvcipcbtQnLEJEWRmsslxP@autorack.proxy.rlwy.net:55362/railway"
-        )
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT password_hash, is_active FROM usuarios WHERE username = %s",
-            (username,)
-        )
-        row = cur.fetchone()
-        conn.close()
-        if not row:
-            return False
-        password_hash, is_active = row
-        if not is_active:
-            return False
-        return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+        return auth_manager.authenticate_user(username, password)
     except Exception as e:
-        app_logger.error(f"Erro ao autenticar via banco: {e}")
+        app_logger.error(f"Erro no fallback de autenticação: {e}")
         return False
 
 
