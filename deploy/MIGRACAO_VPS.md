@@ -2,7 +2,8 @@
 
 ## Status atual (VPS `184.107.179.79`)
 - App em `/opt/rosafiscal` via Docker Compose (`app` + Postgres)
-- URLs: `http://IP:8501` e proxy iContainer `http://IP:8088`
+- **HTTPS (produção):** https://vps12436.panel.icontainer.site/
+- Alternativas: `http://IP:8501` e proxy `http://IP:8088`
 - Banco restaurado do Railway: **3662** emissões + **3** usuários
 - Histórico JSON gerado em `/app/data/nfse_emitidas.json`
 - Certificado A1 (`cert.pem`/`key.pem`) instalado
