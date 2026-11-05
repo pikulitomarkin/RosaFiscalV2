@@ -33,7 +33,7 @@ then senha_ok=true; fi
 
 code=$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 8 --max-time 15 \
   -u '0:0' -F 'teste=@/etc/hosts;type=text/xml' \
-  'https://santarosa.atende.net/?pg=rest&service=WNERestServiceNFSe' || echo 000)
+  'https://ws-santarosa.atende.net/?pg=rest&service=WNERestServiceNFSe' || echo 000)
 [[ "$code" == "401" || "$code" == "403" || "$code" == "200" ]] && ipm_net_ok=true || true
 
 test -s certificados/cert.pem && test -s certificados/key.pem && cert_ok=true || true

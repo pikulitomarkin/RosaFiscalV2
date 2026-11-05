@@ -57,7 +57,8 @@ class Settings(BaseSettings):
     LOG_FILE: str = "logs/nfse_automation.log"
     
     # IPM/Atende.Net - NFS-e Prefeitura de Santa Rosa-RS (ABRASF 2.04)
-    IPM_WEBSERVICE_URL: str = "https://santarosa.atende.net/?pg=rest&service=WNERestServiceNFSe"
+    # URL canônica pós-ago/2025 (sem :7443). Alternativa legado: santarosa.atende.net
+    IPM_WEBSERVICE_URL: str = "https://ws-santarosa.atende.net/?pg=rest&service=WNERestServiceNFSe"
     IPM_USUARIO: str = ""
     IPM_SENHA: str = ""
     IPM_AMBIENTE_TESTE: bool = True  # True = modo teste (valida sem emitir)

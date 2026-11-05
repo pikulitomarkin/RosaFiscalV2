@@ -39,10 +39,13 @@ Há um watcher (cron) que aplica sozinho se o arquivo aparecer:
 ```
 
 ### Onde achar a senha
-1. Dashboard Atende.Net / prefeitura (webservice NFS-e)
+A senha IPM é a **senha de acesso ao sistema NFS-e** (login do CNPJ), não a senha do dashboard Streamlit.
+1. Portal: https://nfse-santarosa.atende.net/ (mesma senha do contribuinte)
 2. Variáveis do projeto **Railway** (se ainda existir): `IPM_SENHA`
-3. Contabilidade / Domínio Contábil (e-mail do prestador)
+3. Contabilidade / Domínio Contábil
 Não cole a senha neste chat.
+
+Webservice URL (após ago/2025): `https://ws-santarosa.atende.net/?pg=rest&service=WNERestServiceNFSe`
 
 ### Puxar do Railway (CLI)
 Com `RAILWAY_TOKEN` e projeto linkado na VPS/agent:
