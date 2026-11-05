@@ -34,11 +34,14 @@ from src.utils.runtime_config import ipm_senha_configurada, get_ipm_senha
 ok = ipm_senha_configurada() and len(get_ipm_senha()) >= 4
 raise SystemExit(0 if ok else 1)
 PY'
+# Rede até o webservice (401 com user inválido = alcançável)
+check "IPM rede Atende.Net" bash -c 'code=$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 8 --max-time 15 -u 0:0 -F "teste=@/etc/hosts;type=text/xml" "https://santarosa.atende.net/?pg=rest&service=WNERestServiceNFSe" || echo 000); [[ "$code" == "401" || "$code" == "403" || "$code" == "200" ]]'
 
 echo "---"
 echo "OK=$ok FAIL=$fail"
 if [[ "$fail" -gt 0 ]]; then
   echo "Cutover incompleto. Se só IPM_SENHA falhou: /opt/rosafiscal/deploy/scripts/set_ipm_senha.sh"
+  echo "Status JSON: /opt/rosafiscal/deploy/scripts/cutover_status.sh"
   exit 1
 fi
 echo "Cutover validado."
