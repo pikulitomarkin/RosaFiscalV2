@@ -8,12 +8,21 @@ cd "$ROOT"
 STATUS_JSON="$(bash deploy/scripts/cutover_status.sh)"
 echo "$STATUS_JSON"
 
-if ! python3 -c 'import json,sys
-raw=sys.stdin.read()
-lines=[l for l in raw.splitlines() if l.strip().startswith("{")]
-data=json.loads(lines[-1]) if lines else {}
-raise SystemExit(0 if data.get("cutover_ready") else 2)
-' <<<"$STATUS_JSON"; then
+READY="$(
+  STATUS_JSON="$STATUS_JSON" python3 - <<'PY'
+import json, os, re
+raw = os.environ.get("STATUS_JSON", "")
+# Aceita JSON pretty-printed ou inline
+m = re.search(r"\{.*\}", raw, flags=re.S)
+if not m:
+    print("false")
+    raise SystemExit(0)
+data = json.loads(m.group(0))
+print("true" if data.get("cutover_ready") else "false")
+PY
+)"
+
+if [[ "$READY" != "true" ]]; then
   echo
   echo "GATE FECHADO: cutover_ready=false (blocker típico: IPM_SENHA)."
   echo "Não desligue o Railway ainda."
