@@ -26,10 +26,26 @@ check "postgres com usuarios" bash -c 'c=$(docker compose exec -T db psql -U nfs
 check "json historico" bash -c 'docker compose exec -T app test -s /app/data/nfse_emitidas.json'
 check "IPM_SENHA definida" bash -c 'python3 - <<"PY"
 from pathlib import Path
+import json, os
+# runtime_config (dashboard) ou .env
+rc = Path("data/runtime_config.json")
+# no container o volume é /app/data
+for p in (Path("/app/data/runtime_config.json"), Path("data/runtime_config.json"), rc):
+    if p.exists():
+        try:
+            data = json.loads(p.read_text())
+            if str(data.get("ipm_senha") or "").strip():
+                raise SystemExit(0)
+        except SystemExit:
+            raise
+        except Exception:
+            pass
 v=""
-for line in Path(".env").read_text().splitlines():
-    if line.startswith("IPM_SENHA="):
-        v=line.split("=",1)[1].strip()
+envp = Path(".env")
+if envp.exists():
+    for line in envp.read_text().splitlines():
+        if line.startswith("IPM_SENHA="):
+            v=line.split("=",1)[1].strip()
 raise SystemExit(0 if v else 1)
 PY'
 
