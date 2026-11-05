@@ -558,6 +558,7 @@ def login_page():
     """Renderiza página de login."""
     st.title("🔐 Sistema de Emissão NFS-e")
     st.markdown("### Portal de Automação de Notas Fiscais")
+    st.caption("Nathalia Gabriela · Santa Rosa-RS · VPS produção")
 
     col1, col2, col3 = st.columns([1, 2, 1])
 
@@ -602,11 +603,23 @@ def render_dashboard():
     st.sidebar.markdown(f"👤 **Usuário:** {st.session_state.username}")
     st.sidebar.markdown("---")
     
-    # Menu de navegação
+    # Se a senha IPM falta, abre Configurações na 1ª visita da sessão
+    from src.utils.runtime_config import ipm_senha_configurada as _ipm_ok
+    menu_opts = [
+        "📊 Dashboard",
+        "📤 Emissão Individual",
+        "📋 Emissão em Lote",
+        "📜 NFS-e Emitidas",
+        "⚙️ Configurações",
+    ]
+    if not _ipm_ok() and not st.session_state.get("_ipm_prompt_shown"):
+        st.session_state.menu_navigation = "⚙️ Configurações"
+        st.session_state._ipm_prompt_shown = True
+
     menu = st.sidebar.radio(
         "Navegação",
-        ["📊 Dashboard", "📤 Emissão Individual", "📋 Emissão em Lote", "📜 NFS-e Emitidas", "⚙️ Configurações"],
-        key="menu_navigation"
+        menu_opts,
+        key="menu_navigation",
     )
     
     if st.sidebar.button("🚪 Sair", use_container_width=True):
