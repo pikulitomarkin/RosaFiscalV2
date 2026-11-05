@@ -1705,24 +1705,12 @@ def render_settings():
         ipm_senha_configurada,
         save_ipm_credentials,
     )
+    from src.utils.logger import app_logger
 
     st.title("⚙️ Configurações do Sistema")
     st.markdown("---")
 
-    # Prestador oficial (Nathalia) — identidade do emissor, não o subject de PEM de terceiros
-    st.markdown("### 🏥 Prestador (emissor)")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(f"**CNPJ:** {PRESTADOR_OFICIAL['cnpj']}")
-        st.markdown(f"**Razão social:** {PRESTADOR_OFICIAL['razao_social']}")
-        st.markdown(f"**Nome fantasia:** {PRESTADOR_OFICIAL['nome_fantasia']}")
-    with col2:
-        st.markdown(f"**Inscrição municipal:** {PRESTADOR_OFICIAL['inscricao_municipal']}")
-        st.markdown("**Município:** Santa Rosa - RS")
-        st.success("✅ Prestador: Nathalia Gabriela")
-
-    st.markdown("---")
-
+    # IPM primeiro: único bloqueio do cutover; não esconder abaixo do prestador
     st.markdown("### 🔑 Webservice IPM (Atende.Net)")
     st.caption("Senha usada na emissão das NFS-e. Salva no volume do servidor (não no Git).")
     ipm_user = get_ipm_usuario()
@@ -1730,7 +1718,10 @@ def render_settings():
     if senha_ok:
         st.success("Senha IPM já configurada neste servidor.")
     else:
-        st.warning("Senha IPM ainda não configurada — a emissão falha até você salvar.")
+        st.error(
+            "Senha IPM ainda não configurada — a emissão NFS-e fica bloqueada até salvar. "
+            "Peça a senha do webservice Atende.Net (prefeitura / contabilidade)."
+        )
 
     with st.form("ipm_credentials_form"):
         usuario_input = st.text_input(
@@ -1754,15 +1745,34 @@ def render_settings():
         if not senha_input and not senha_ok:
             st.error("Informe a senha IPM para salvar.")
         else:
-            save_ipm_credentials(usuario_input, senha_input)
             try:
+                save_ipm_credentials(usuario_input, senha_input)
                 object.__setattr__(settings, "IPM_USUARIO", get_ipm_usuario())
                 if senha_input:
                     object.__setattr__(settings, "IPM_SENHA", get_ipm_senha())
-            except Exception:
-                pass
-            st.success("✅ Credenciais IPM salvas.")
-            st.rerun()
+                app_logger.info(
+                    f"Credenciais IPM salvas via dashboard "
+                    f"(usuario={get_ipm_usuario()}, senha_len={len(senha_input) if senha_input else 0})"
+                )
+                st.success("✅ Credenciais IPM salvas.")
+                st.rerun()
+            except Exception as e:
+                app_logger.exception("Falha ao salvar credenciais IPM")
+                st.error(f"Falha ao salvar no volume: {e}")
+
+    st.markdown("---")
+
+    # Prestador oficial (Nathalia) — identidade do emissor, não o subject de PEM de terceiros
+    st.markdown("### 🏥 Prestador (emissor)")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"**CNPJ:** {PRESTADOR_OFICIAL['cnpj']}")
+        st.markdown(f"**Razão social:** {PRESTADOR_OFICIAL['razao_social']}")
+        st.markdown(f"**Nome fantasia:** {PRESTADOR_OFICIAL['nome_fantasia']}")
+    with col2:
+        st.markdown(f"**Inscrição municipal:** {PRESTADOR_OFICIAL['inscricao_municipal']}")
+        st.markdown("**Município:** Santa Rosa - RS")
+        st.success("✅ Prestador: Nathalia Gabriela")
 
     testar = st.button(
         "🔌 Testar conexão IPM (modo teste — não emite nota)",

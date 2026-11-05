@@ -37,6 +37,8 @@ ENV/
 .env
 .env.local
 .env.production
+secrets/
+**/ipm_senha
 
 # Logs
 logs/
