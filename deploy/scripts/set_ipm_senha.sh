@@ -43,8 +43,14 @@ path.chmod(0o600)
 print("IPM_SENHA atualizada em", path.resolve())
 PY
 
-# Recria o app com o .env novo
-docker compose up -d app
+# Recria o app com o .env novo e espera health
+docker compose up -d --force-recreate app
+for _ in $(seq 1 30); do
+  if curl -sf -o /dev/null http://127.0.0.1:8501/_stcore/health; then
+    break
+  fi
+  sleep 1
+done
 
 # Espelha no volume usado pelo dashboard (runtime_config.json)
 docker compose exec -T -e SENHA="$SENHA" app python - <<'PY'

@@ -17,7 +17,7 @@ check() {
 }
 
 check "docker compose ps (app up)" bash -c 'docker compose ps --status running | grep -q rosafiscal-app'
-check "http :8501 health" bash -c 'curl -sf -o /dev/null http://127.0.0.1:8501/_stcore/health'
+check "http :8501 health" bash -c 'for i in $(seq 1 20); do curl -sf -o /dev/null http://127.0.0.1:8501/_stcore/health && exit 0; sleep 1; done; exit 1'
 check "https domain health" bash -c 'curl -skf -o /dev/null https://vps12436.panel.icontainer.site/_stcore/health'
 # Certificado A1 é opcional no fluxo IPM (Basic Auth). Só avisa.
 if test -s certificados/cert.pem && test -s certificados/key.pem; then
