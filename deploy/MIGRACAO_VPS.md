@@ -20,6 +20,11 @@ Login: use os mesmos usuários do Railway (`admin`, `medico`, …).
 Não cole a senha no chat.
 
 
+### Validar cutover
+```bash
+/opt/rosafiscal/deploy/scripts/validate_migracao.sh
+```
+
 ### Backup automático
 ```bash
 chmod 700 /opt/rosafiscal/deploy/scripts/backup_nfse.sh
