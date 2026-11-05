@@ -54,6 +54,9 @@ async def init_database():
     """Inicializa o banco de dados criando todas as tabelas."""
     from sqlalchemy import text
 
+    # Garante que os modelos estejam registrados no metadata antes do create_all
+    from src.database import models  # noqa: F401
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
