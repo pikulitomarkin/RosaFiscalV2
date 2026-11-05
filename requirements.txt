@@ -1,6 +1,9 @@
 # Core Framework
 streamlit==1.30.0
 python-dotenv==1.0.0
+# streamlit 1.30 exige numpy<2; pin pyarrow compatível (evita ImportError no boot)
+numpy>=1.24.0,<2
+pyarrow==15.0.2
 
 # PDF Processing
 pdfplumber==0.10.3

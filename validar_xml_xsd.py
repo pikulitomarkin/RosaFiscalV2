@@ -87,9 +87,9 @@ print("""
     <cLocEmi>4205407</cLocEmi>  <!-- Florianópolis -->
     
     <prest>  <!-- NÃO "Prestador" -->
-      <CNPJ>59418245000186</CNPJ>
-      <IM>8259069</IM>  <!-- NÃO "InscricaoMunicipal" -->
-      <xNome>GABRIEL SALEH SERVICOS MEDICOS LTDA</xNome>  <!-- NÃO "RazaoSocial" -->
+      <CNPJ>56169351000185</CNPJ>
+      <IM>56937</IM>  <!-- NÃO "InscricaoMunicipal" -->
+      <xNome>NATHALIA GABRIELA SERVICOS DE SAUDE LTDA</xNome>  <!-- NÃO "RazaoSocial" -->
       <end>  <!-- Endereço completo -->
         <endNac>
           <cMun>4205407</cMun>

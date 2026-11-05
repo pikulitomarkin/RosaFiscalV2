@@ -37,6 +37,14 @@ ENV/
 .env
 .env.local
 .env.production
+secrets/
+**/ipm_senha
+CUTOVER_STATUS.json
+HANDOFF_CUTOVER.md
+backups/
+nfse_railway.dump
+nfse_railway.sql
+*.dump
 
 # Logs
 logs/
@@ -124,3 +132,9 @@ nfse_emitidas.json
 # ==================== Arquivos de swagger/spec ====================
 swagger.html
 api-spec.json
+
+# Persistência local/VPS
+data/
+!data/.gitkeep
+logs/
+!logs/.gitkeep

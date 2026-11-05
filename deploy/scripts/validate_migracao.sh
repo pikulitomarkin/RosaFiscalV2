@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Valida cutover Railway → VPS. Exit 0 só se tudo crítico estiver OK.
+set -euo pipefail
+ROOT=/opt/rosafiscal
+cd "$ROOT"
+ok=0
+fail=0
+check() {
+  local name="$1"; shift
+  if "$@"; then
+    echo "OK   $name"
+    ok=$((ok+1))
+  else
+    echo "FAIL $name"
+    fail=$((fail+1))
+  fi
+}
+
+check "docker compose ps (app up)" bash -c 'docker compose ps --status running | grep -q rosafiscal-app'
+check "http :8501 health" bash -c 'for i in $(seq 1 20); do curl -sf -o /dev/null http://127.0.0.1:8501/_stcore/health && exit 0; sleep 1; done; exit 1'
+check "https domain health" bash -c 'curl -skf -o /dev/null https://vps12436.panel.icontainer.site/_stcore/health'
+# Certificado A1 é opcional no fluxo IPM (Basic Auth). Só avisa.
+if test -s certificados/cert.pem && test -s certificados/key.pem; then
+  echo "OK   certificado A1 presente (opcional no IPM)"
+  ok=$((ok+1))
+else
+  echo "WARN certificado A1 ausente (ok para IPM; necessário só se usar Sefin/ADN)"
+fi
+check "postgres com emissoes" bash -c 'c=$(docker compose exec -T db psql -U nfse -d nfse -Atc "select count(*) from nfse_emissoes"); test "$c" -gt 0'
+check "postgres com usuarios" bash -c 'c=$(docker compose exec -T db psql -U nfse -d nfse -Atc "select count(*) from usuarios"); test "$c" -gt 0'
+check "json historico" bash -c 'docker compose exec -T app test -s /app/data/nfse_emitidas.json'
+check "IPM_SENHA definida" bash -c 'docker compose exec -T app python - <<"PY"
+from src.utils.runtime_config import ipm_senha_configurada, get_ipm_senha
+ok = ipm_senha_configurada() and len(get_ipm_senha()) >= 4
+raise SystemExit(0 if ok else 1)
+PY'
+# Rede até o webservice (401 com user inválido = alcançável)
+check "IPM rede Atende.Net" bash -c 'code=$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 8 --max-time 15 -u 0:0 -F "teste=@/etc/hosts;type=text/xml" "https://ws-santarosa.atende.net/?pg=rest&service=WNERestServiceNFSe" || echo 000); [[ "$code" == "401" || "$code" == "403" || "$code" == "200" ]]'
+
+echo "---"
+echo "OK=$ok FAIL=$fail"
+if [[ "$fail" -gt 0 ]]; then
+  echo "Cutover incompleto. Se só IPM_SENHA falhou: /opt/rosafiscal/deploy/scripts/set_ipm_senha.sh"
+  echo "Status JSON: /opt/rosafiscal/deploy/scripts/cutover_status.sh"
+  exit 1
+fi
+echo "Cutover validado."
+exit 0
