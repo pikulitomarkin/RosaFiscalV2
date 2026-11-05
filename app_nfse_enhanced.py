@@ -1751,6 +1751,42 @@ def render_settings():
             st.success("✅ Credenciais IPM salvas.")
             st.rerun()
 
+    if ipm_senha_configurada():
+        if st.button("🔌 Testar conexão IPM (modo teste — não emite nota)", use_container_width=True):
+            with st.spinner("Testando autenticação no Atende.Net..."):
+                try:
+                    from src.api.ipm_soap_client import IPMSoapClient
+                    from src.utils.rps_xml_generator import RPSXMLGenerator
+                    from src.api.nfse_service import NFSeService
+
+                    prestador = NFSeService()._load_default_prestador()
+                    gen = RPSXMLGenerator(ambiente_teste=True)
+                    xml = gen.gerar_enviar_lote_rps_sincrono(
+                        cnpj_prestador=prestador["cnpj"],
+                        inscricao_municipal=prestador["inscricao_municipal"],
+                        numero_lote=1,
+                        numero_rps=1,
+                        serie_rps="A",
+                        cpf_tomador="00000000191",
+                        nome_tomador="TESTE CONEXAO IPM",
+                        descricao="TESTE VALIDACAO CREDENCIAIS",
+                        valor=1.0,
+                        aliquota_iss=2.01,
+                        codigo_servico="40303",
+                        nbs="1.2301.21.00",
+                        bairro_tomador="CENTRO",
+                        cep_tomador="98780000",
+                        logradouro_tomador="RUA TESTE",
+                    )
+                    result = asyncio.run(IPMSoapClient().enviar_lote_rps_sincrono(xml))
+                    if result.get("sucesso"):
+                        st.success("✅ Conexão IPM OK (modo teste). Pode emitir notas.")
+                    else:
+                        msgs = result.get("mensagens") or result.get("erros") or result
+                        st.error(f"❌ IPM rejeitou o teste: {msgs}")
+                except Exception as e:
+                    st.error(f"❌ Falha ao testar IPM: {e}")
+
     st.markdown("---")
 
     st.markdown("### 🔐 Certificado Digital")
