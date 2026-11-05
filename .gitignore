@@ -39,6 +39,12 @@ ENV/
 .env.production
 secrets/
 **/ipm_senha
+CUTOVER_STATUS.json
+HANDOFF_CUTOVER.md
+backups/
+nfse_railway.dump
+nfse_railway.sql
+*.dump
 
 # Logs
 logs/
