@@ -420,33 +420,45 @@ def _sync_notas_para_db(notas: list):
     from src.database.models import NFSeEmissao
     from config.database import AsyncSessionLocal
 
-    async def _upsert():
-        async with AsyncSessionLocal() as session:
-            for nota in notas:
-                chave = nota.get('chave_acesso') or nota.get('numero')
-                if not chave or chave == 'N/A':
-                    continue
-                stmt = select(NFSeEmissao).where(NFSeEmissao.hash_transacao == chave)
-                result = await session.execute(stmt)
-                existing = result.scalar_one_or_none()
-                if existing:
-                    continue  # já existe, não duplica
+    def _trunc(value, size: int) -> str:
+        text_val = str(value or '')
+        return text_val[:size] if size > 0 else text_val
 
-                cpf = str(nota.get('tomador_cpf', '') or '').replace('.', '').replace('-', '')
-                emissao = NFSeEmissao(
-                    hash_transacao=chave,
-                    numero_nfse=str(nota.get('numero', '') or ''),
-                    protocolo=chave,
-                    cpf_tomador=cpf[:11] if cpf else '00000000000',
-                    nome_tomador=str(nota.get('tomador_nome', '') or '')[:150],
-                    status='sucesso',
-                    url_nfse=nota.get('link_nfse'),
-                    valor_servico=nota.get('valor'),
-                    valor_iss=nota.get('iss'),
-                    usuario=st.session_state.get('username', 'admin'),
-                )
-                session.add(emissao)
-            await session.commit()
+    async def _upsert():
+        salvas = 0
+        for nota in notas:
+            chave = nota.get('chave_acesso') or nota.get('numero')
+            if not chave or chave == 'N/A':
+                continue
+            chave = _trunc(chave, 128)
+            cpf = str(nota.get('tomador_cpf', '') or '').replace('.', '').replace('-', '').replace('/', '')
+            try:
+                async with AsyncSessionLocal() as session:
+                    stmt = select(NFSeEmissao).where(NFSeEmissao.hash_transacao == chave)
+                    result = await session.execute(stmt)
+                    existing = result.scalar_one_or_none()
+                    if existing:
+                        continue  # já existe, não duplica
+
+                    emissao = NFSeEmissao(
+                        hash_transacao=chave,
+                        numero_nfse=_trunc(nota.get('numero', ''), 20),
+                        protocolo=_trunc(chave, 128),
+                        cpf_tomador=(cpf[:14] if cpf else '00000000000'),
+                        nome_tomador=_trunc(nota.get('tomador_nome', ''), 150),
+                        status='sucesso',
+                        url_nfse=_trunc(nota.get('link_nfse'), 1000) or None,
+                        valor_servico=nota.get('valor'),
+                        valor_iss=nota.get('iss'),
+                        descricao_servico=nota.get('descricao'),
+                        usuario=_trunc(st.session_state.get('username', 'admin'), 50),
+                    )
+                    session.add(emissao)
+                    await session.commit()
+                    salvas += 1
+            except Exception as e:
+                app_logger.error(f"Falha ao persistir nota {chave}: {e}")
+        app_logger.info(f"Sync DB concluído: {salvas} novas notas persistidas")
 
     asyncio.run(_upsert())
 
@@ -859,6 +871,222 @@ def render_single_emission():
 # EMISSÃO EM LOTE (MANTIDO DO ORIGINAL)
 # ============================================================================
 
+def _processar_emissao_lote(
+    records_to_process,
+    valor_servico,
+    aliquota_iss,
+    item_lista,
+    descricao_servico,
+    discriminacao,
+):
+    """Processa emissão em lote FORA do st.form para não interromper o Streamlit."""
+
+    st.markdown("### 4️⃣ Processamento em Andamento")
+
+    # Barra de progresso
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    # Painel de logs em tempo real
+    log_expander = st.expander("📋 Ver Logs Detalhados", expanded=False)
+    log_text = log_expander.empty()
+    logs = []
+
+    resultados = []
+    sucessos = 0
+    falhas = 0
+
+    DELAY_ENTRE_EMISSOES = 2   # segundos entre cada nota do lote (throttling)
+
+    def _emitir_ipm_registro(registro_dict, config_dict):
+        """Emite uma NFS-e via IPM/Atende.Net e retorna dict compatível com o loop."""
+        ipm_results = asyncio.run(
+            get_nfse_service().emitir_nfse_lote_ipm([registro_dict], config_dict)
+        )
+        r = ipm_results[0]
+        return {
+            "sucesso": r.status == "sucesso",
+            "chave_acesso": r.protocolo or r.numero_nfse or "N/A",
+            "numero": r.numero_nfse or "N/A",
+            "xml_path": None,
+            "pdf_path": None,
+            "link_nfse": r.link_nfse,
+            "mensagem": r.mensagem or "",
+        }
+
+    for idx, record in enumerate(records_to_process):
+        status_text.text(f"⏳ Processando {idx+1}/{len(records_to_process)}: {record.get('nome', 'N/A')}...")
+
+        try:
+            log_msg = f"[{idx+1}/{len(records_to_process)}] Processando: {record.get('nome', 'N/A')}"
+            logs.append(log_msg)
+            log_text.code("\n".join(logs[-20:]))
+            app_logger.info(log_msg)
+
+            cpf_cnpj = (record.get('cpf') or '').replace('.', '').replace('-', '').replace('/', '')
+            hash_paciente = record.get('hash', '') or ''
+            app_logger.info(f"[{idx+1}] CPF limpo: {cpf_cnpj}, Hash: {hash_paciente}")
+
+            descricao_com_hash = hash_paciente if hash_paciente else descricao_servico
+            discriminacao_com_hash = discriminacao if discriminacao else ""
+            if hash_paciente:
+                if discriminacao_com_hash:
+                    discriminacao_com_hash += f"\nHash do Paciente: {hash_paciente}"
+                else:
+                    discriminacao_com_hash = f"Hash do Paciente: {hash_paciente}"
+
+            # Valor fixo do formulário (> 0) substitui o valor do PDF
+            if valor_servico > 0:
+                valor_nota = valor_servico
+                fonte_valor = "formulário (fixo)"
+            else:
+                valor_nota = record.get('valor') or 0
+                fonte_valor = "PDF"
+            app_logger.info(f"[{idx+1}] Emitindo via IPM (valor={valor_nota}, fonte={fonte_valor})...")
+
+            _reg_ipm = {
+                "cpf": cpf_cnpj,
+                "nome": record.get("nome", ""),
+                "hash": hash_paciente,
+                "bairro": record.get("bairro", "NAO INFORMADO"),
+                "cep": (record.get("cep") or "").replace("-", "") or "00000000",
+                "logradouro": record.get("logradouro", "NAO INFORMADO"),
+            }
+            _cfg_ipm = {
+                "valor": float(valor_nota),
+                "aliquota_iss": aliquota_iss,
+                "item_lista": (item_lista or "40303").replace(".", ""),
+                "descricao": descricao_com_hash,
+            }
+            resultado = _emitir_ipm_registro(_reg_ipm, _cfg_ipm)
+            app_logger.info(f"[{idx+1}] Emissão concluída: {resultado.get('sucesso', False)}")
+
+            # Throttling: 2 segundos entre cada emissão
+            time.sleep(DELAY_ENTRE_EMISSOES)
+
+            if resultado['sucesso']:
+                sucessos += 1
+                chave = str(resultado.get('chave_acesso') or 'N/A')
+                logs.append(f"  ✅ Sucesso! Chave: {chave[:20]}...")
+                log_text.code("\n".join(logs[-20:]))
+
+                nfse_data = {
+                    'chave_acesso': chave,
+                    'numero': resultado.get('numero', 'N/A'),
+                    'data_emissao': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                    'tomador_nome': record.get('nome', 'N/A'),
+                    'tomador_cpf': record.get('cpf', 'N/A'),
+                    'tomador_bairro': record.get('bairro', 'NI'),
+                    'tomador_cep': record.get('cep', 'NI'),
+                    'tomador_logradouro': record.get('logradouro', 'NI'),
+                    'valor': float(valor_nota),
+                    'iss': float(valor_nota) * (aliquota_iss / 100),
+                    'aliquota_iss': aliquota_iss,
+                    'descricao': descricao_com_hash,
+                    'codigo_servico': (item_lista or '40303').replace('.', ''),
+                    'xml_path': None,
+                    'pdf_path': None,
+                    'link_nfse': resultado.get('link_nfse'),
+                }
+
+                st.session_state.emitted_nfse.append(nfse_data)
+                save_emitted_nfse()
+
+                resultados.append({
+                    'nome': record.get('nome'),
+                    'cpf': record.get('cpf'),
+                    'status': '✅ Sucesso',
+                    'chave': chave,
+                })
+            else:
+                falhas += 1
+                logs.append(f"  ❌ Falha: {resultado.get('mensagem', 'Erro desconhecido')[:50]}")
+                log_text.code("\n".join(logs[-20:]))
+                resultados.append({
+                    'nome': record.get('nome'),
+                    'cpf': record.get('cpf'),
+                    'status': '❌ Falha',
+                    'erro': resultado.get('mensagem', 'Erro desconhecido')
+                })
+
+        except Exception as e:
+            falhas += 1
+            erro_msg = str(e)
+            app_logger.error(f"[{idx+1}] ERRO COMPLETO: {erro_msg}", exc_info=True)
+
+            logs.append(f"  ❌ ERRO: {erro_msg[:80]}")
+            log_text.code("\n".join(logs[-20:]))
+
+            resultados.append({
+                'nome': record.get('nome', 'N/A'),
+                'cpf': record.get('cpf', 'N/A'),
+                'status': '❌ Erro',
+                'erro': erro_msg[:100],
+            })
+            status_text.text(f"❌ Erro no registro {idx+1}: {erro_msg[:50]}...")
+
+        # Atualizar progresso
+        progress = (idx + 1) / len(records_to_process)
+        progress_bar.progress(progress)
+
+    # Finalizar
+    status_text.text("✅ Processamento concluído!")
+
+    st.markdown("### 5️⃣ Resultado do Processamento")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric("Total Processado", len(records_to_process))
+
+    with col2:
+        st.metric("✅ Sucessos", sucessos)
+
+    with col3:
+        st.metric("❌ Falhas", falhas)
+
+    # Tabela de resultados
+    st.markdown("### 📊 Detalhamento")
+
+    import pandas as pd
+    df_result = pd.DataFrame(resultados)
+    st.dataframe(df_result, use_container_width=True)
+
+    # Gerar ZIP com PDFs baixados dos links IPM
+    if sucessos > 0:
+        st.success(f"🎉 {sucessos} NFS-e emitidas com sucesso!")
+
+        try:
+            with st.spinner("📦 Gerando PDFs e criando ZIP..."):
+                notas_recentes = st.session_state.emitted_nfse[-sucessos:]
+                zip_buffer, baixados, erros_dl = _gerar_zip_pdfs_ipm(notas_recentes)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                zip_filename = f"nfse_lote_{timestamp}.zip"
+
+            if baixados > 0:
+                st.success(f"✅ {baixados}/{sucessos} PDFs prontos para download!")
+                st.download_button(
+                    label=f"📥 Baixar {baixados} PDFs (ZIP)",
+                    data=zip_buffer,
+                    file_name=zip_filename,
+                    mime="application/zip",
+                    use_container_width=True,
+                    type="primary",
+                )
+            else:
+                st.warning("⚠️ PDFs ainda não disponíveis nos links da Prefeitura.")
+                st.info("💡 Use os links individuais em 'NFS-e Emitidas' para baixar depois.")
+
+            if erros_dl:
+                with st.expander(f"⚠️ {len(erros_dl)} PDFs não baixados"):
+                    for err in erros_dl:
+                        st.text(err)
+
+        except Exception as e:
+            st.error(f"❌ Erro ao preparar ZIP: {e}")
+            app_logger.error(f"Erro ao gerar ZIP de PDFs IPM: {e}", exc_info=True)
+
+
 def render_batch_emission():
     """Renderiza página de emissão em lote."""
     st.title("📋 Emissão em Lote de NFS-e")
@@ -1029,335 +1257,21 @@ def render_batch_emission():
                             use_container_width=True,
                             type="primary"
                         )
-                        
-                        if submitted:
-                            if not valid_records:
-                                st.error("❌ Nenhum registro válido encontrado!")
-                            else:
-                                # Limitar registros ao limite do lote
-                                records_to_process = valid_records[:limite_lote]
-                                
-                                st.markdown("### 4️⃣ Processamento em Andamento")
-                                
-                                # Preparar dados do serviço
-                                servico = {
-                                    'valor': valor_servico,
-                                    'aliquota_iss': aliquota_iss,
-                                    'item_lista': item_lista,
-                                    'descricao': descricao_servico,
-                                    'discriminacao': discriminacao if discriminacao else None,
-                                    'simples_nacional': simples_nacional,
-                                    'incentivador_cultural': False
-                                }
-                                
-                                prestador = {
-                                    'cnpj': '56169351000185',
-                                }
-                                
-                                # Barra de progresso
-                                progress_bar = st.progress(0)
-                                status_text = st.empty()
-                                
-                                # Painel de logs em tempo real
-                                log_expander = st.expander("📋 Ver Logs Detalhados", expanded=False)
-                                log_text = log_expander.empty()
-                                logs = []
-                                
-                                resultados = []
-                                sucessos = 0
-                                falhas = 0
-                                
-                                # Constantes para tratamento E0014 (DPS já existente)
-                                CODIGO_E0014 = "E0014"
-                                REGEX_ID_DPS = re.compile(r"DPS\d{44}")
-                                DELAY_ENTRE_EMISSOES = 2   # segundos entre cada nota do lote (throttling)
-                                DELAY_RETRY_E0014 = 5      # segundos antes de reenviar quando E0014 e NFS-e não existe
-                                MAX_TENTATIVAS = 3
 
-                                def _extrair_id_dps(body: Any) -> Optional[str]:
-                                    if not body or not isinstance(body, dict):
-                                        return None
-                                    if body.get("idDPS"):
-                                        return str(body["idDPS"]).strip()
-                                    for lst in ("erros", "Erros", "errors"):
-                                        items = body.get(lst)
-                                        if isinstance(items, list):
-                                            for item in items:
-                                                if isinstance(item, dict) and (item.get("Codigo") or item.get("codigo")) == CODIGO_E0014:
-                                                    if item.get("idDPS"):
-                                                        return str(item["idDPS"]).strip()
-                                                    desc = (item.get("Descricao") or item.get("descricao") or "") + " " + str(body)
-                                                    m = REGEX_ID_DPS.search(desc)
-                                                    if m:
-                                                        return m.group(0)
-                                    m = REGEX_ID_DPS.search(json.dumps(body))
-                                    return m.group(0) if m else None
+                    # Processamento FORA do form — evita reload/interrupção do Streamlit
+                    if submitted:
+                        if not valid_records:
+                            st.error("❌ Nenhum registro válido encontrado!")
+                        else:
+                            _processar_emissao_lote(
+                                records_to_process=valid_records[:limite_lote],
+                                valor_servico=valor_servico,
+                                aliquota_iss=aliquota_iss,
+                                item_lista=item_lista,
+                                descricao_servico=descricao_servico,
+                                discriminacao=discriminacao,
+                            )
 
-                                def _eh_erro_e0014(body: Any) -> bool:
-                                    if not body or not isinstance(body, dict):
-                                        return False
-                                    for lst in ("erros", "Erros", "errors"):
-                                        items = body.get(lst)
-                                        if isinstance(items, list):
-                                            for item in items:
-                                                if isinstance(item, dict) and (item.get("Codigo") or item.get("codigo")) == CODIGO_E0014:
-                                                    return True
-                                    return False
-
-                                def _emitir_ipm_registro(registro_dict, config_dict):
-                                    """Emite uma NFS-e via IPM/Atende.Net e retorna dict compatível com o loop."""
-                                    ipm_results = asyncio.run(
-                                        get_nfse_service().emitir_nfse_lote_ipm([registro_dict], config_dict)
-                                    )
-                                    r = ipm_results[0]
-                                    return {
-                                        "sucesso": r.status == "sucesso",
-                                        "chave_acesso": r.protocolo or r.numero_nfse or "N/A",
-                                        "numero": r.numero_nfse or "N/A",
-                                        "xml_path": None,
-                                        "pdf_path": None,
-                                        "link_nfse": r.link_nfse,
-                                        "mensagem": r.mensagem or "",
-                                    }
-                                
-                                for idx, record in enumerate(records_to_process):
-                                    status_text.text(f"⏳ Processando {idx+1}/{len(records_to_process)}: {record.get('nome', 'N/A')}...")
-                                    
-                                    try:
-                                        # LOG 1: Dados do registro
-                                        log_msg = f"[{idx+1}/{len(records_to_process)}] Processando: {record.get('nome', 'N/A')}"
-                                        logs.append(log_msg)
-                                        log_text.code("\n".join(logs[-20:]))  # Mostrar últimas 20 linhas
-                                        app_logger.info(log_msg)
-                                        
-                                        # Preparar tomador
-                                        cpf_cnpj = record.get('cpf', '').replace('.', '').replace('-', '').replace('/', '')
-                                        hash_paciente = record.get('hash', '')
-                                        
-                                        app_logger.info(f"[{idx+1}] CPF limpo: {cpf_cnpj}, Hash: {hash_paciente}")
-                                        
-                                        # Prestador
-                                        app_logger.info(f"[{idx+1}] Criando objeto Prestador...")
-                                        prestador_obj = PrestadorServico(
-                                            cnpj='56169351000185',
-                                            inscricao_municipal='56937',
-                                            razao_social='NATHALIA GABRIELA SERVICOS DE SAUDE LTDA',
-                                            logradouro='Rua Exemplo',
-                                            numero='123',
-                                            bairro='Centro',
-                                            municipio='Florianopolis',
-                                            uf='SC',
-                                            cep='88010000'
-                                        )
-                                        app_logger.info(f"[{idx+1}] Prestador criado com sucesso")
-                                        
-                                        # Tomador
-                                        app_logger.info(f"[{idx+1}] Criando objeto Tomador...")
-                                        tomador_obj = TomadorServico(
-                                            cpf=cpf_cnpj if len(cpf_cnpj) == 11 else None,
-                                            cnpj=cpf_cnpj if len(cpf_cnpj) == 14 else None,
-                                            nome=record.get('nome', 'Cliente'),
-                                            email=record.get('email'),
-                                            telefone=record.get('telefone')
-                                        )
-                                        app_logger.info(f"[{idx+1}] Tomador criado com sucesso")
-                                        
-                                        # Criar descrição personalizada com o hash do paciente
-                                        app_logger.info(f"[{idx+1}] Preparando descrição com hash...")
-                                        
-                                        # Adicionar hash na DESCRIÇÃO (aparece na DANFSE)
-                                        descricao_com_hash = hash_paciente if hash_paciente else descricao_servico
-                                        
-                                        # Adicionar hash também na discriminação
-                                        discriminacao_com_hash = discriminacao if discriminacao else ""
-                                        if hash_paciente:
-                                            if discriminacao_com_hash:
-                                                discriminacao_com_hash += f"\nHash do Paciente: {hash_paciente}"
-                                            else:
-                                                discriminacao_com_hash = f"Hash do Paciente: {hash_paciente}"
-                                        
-                                        # Serviço — se valor fixo foi definido no formulário usa ele para todos;
-                                        # caso contrário usa o valor extraído do PDF de cada registro
-                                        if valor_servico > 0:
-                                            valor_nota = valor_servico
-                                            fonte_valor = "formulário (fixo)"
-                                        else:
-                                            valor_nota = record.get('valor') or 0
-                                            fonte_valor = "PDF"
-                                        app_logger.info(f"[{idx+1}] Criando objeto Servico (valor={valor_nota}, fonte={fonte_valor})...")
-                                        servico_obj = Servico(
-                                            valor_servico=valor_nota,
-                                            aliquota_iss=aliquota_iss,
-                                            item_lista_servico=item_lista,
-                                            descricao=descricao_com_hash,
-                                            discriminacao=discriminacao_com_hash
-                                        )
-                                        app_logger.info(f"[{idx+1}] Servico criado com sucesso")
-                                        
-                                        # Emitir NFS-e via IPM/Atende.Net
-                                        app_logger.info(f"[{idx+1}] Chamando IPM Atende.Net...")
-                                        _reg_ipm = {
-                                            "cpf": cpf_cnpj,
-                                            "nome": record.get("nome", ""),
-                                            "hash": hash_paciente or "",
-                                            "bairro": record.get("bairro", "NAO INFORMADO"),
-                                            "cep": (record.get("cep") or "").replace("-", "") or "00000000",
-                                            "logradouro": record.get("logradouro", "NAO INFORMADO"),
-                                        }
-                                        _cfg_ipm = {
-                                            "valor": float(valor_nota),
-                                            "aliquota_iss": aliquota_iss,
-                                            "item_lista": item_lista.replace(".", ""),
-                                            "descricao": descricao_com_hash,
-                                        }
-                                        resultado = _emitir_ipm_registro(_reg_ipm, _cfg_ipm)
-                                        app_logger.info(f"[{idx+1}] Emissão concluída: {resultado.get('sucesso', False)}")
-                                        
-                                        # Throttling: 2 segundos entre cada emissão (reduz E0014 intermitente)
-                                        time.sleep(DELAY_ENTRE_EMISSOES)
-                                        
-                                        if resultado['sucesso']:
-                                            sucessos += 1
-                                            
-                                            logs.append(f"  ✅ Sucesso! Chave: {resultado['chave_acesso'][:20]}...")
-                                            log_text.code("\n".join(logs[-20:]))
-                                            
-                                            # Salvar na sessão
-                                            nfse_data = {
-                                                'chave_acesso': resultado['chave_acesso'],
-                                                'numero': resultado.get('numero', 'N/A'),
-                                                'data_emissao': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                                                'tomador_nome': record.get('nome', 'N/A'),
-                                                'tomador_cpf': record.get('cpf', 'N/A'),
-                                                'tomador_bairro': record.get('bairro', 'NI'),
-                                                'tomador_cep': record.get('cep', 'NI'),
-                                                'tomador_logradouro': record.get('logradouro', 'NI'),
-                                                'valor': float(valor_nota),
-                                                'iss': float(valor_nota) * (aliquota_iss / 100),
-                                                'aliquota_iss': aliquota_iss,
-                                                'descricao': config_servico.get('descricao', 'CONSULTA MEDICA'),
-                                                'codigo_servico': config_servico.get('item_lista', '40303'),
-                                                'xml_path': None,
-                                                'pdf_path': None,
-                                                'link_nfse': resultado.get('link_nfse'),
-                                            }
-                                            
-                                            st.session_state.emitted_nfse.append(nfse_data)
-                                            
-                                            # Salvar persistência após cada nota
-                                            save_emitted_nfse()
-                                            
-                                            resultados.append({
-                                                'nome': record.get('nome'),
-                                                'cpf': record.get('cpf'),
-                                                'status': '✅ Sucesso',
-                                                'chave': resultado['chave_acesso']
-                                            })
-                                        else:
-                                            falhas += 1
-                                            logs.append(f"  ❌ Falha: {resultado.get('mensagem', 'Erro desconhecido')[:50]}")
-                                            log_text.code("\n".join(logs[-20:]))
-                                            resultados.append({
-                                                'nome': record.get('nome'),
-                                                'cpf': record.get('cpf'),
-                                                'status': '❌ Falha',
-                                                'erro': resultado.get('mensagem', 'Erro desconhecido')
-                                            })
-                                    
-                                    except Exception as e:
-                                        falhas += 1
-                                        erro_msg = str(e)
-                                        
-                                        # LOG de erro detalhado
-                                        app_logger.error(f"[{idx+1}] ERRO COMPLETO: {erro_msg}")
-                                        app_logger.error(f"[{idx+1}] Tipo do erro: {type(e).__name__}")
-                                        app_logger.error(f"[{idx+1}] Registro: {record}")
-                                        
-                                        # Capturar detalhes do erro
-                                        if "'cnpj'" in erro_msg or "cnpj" in erro_msg.lower():
-                                            erro_msg = f"Erro ao criar objeto Prestador/Tomador: {erro_msg}"
-                                            app_logger.error(f"[{idx+1}] Erro relacionado a CNPJ detectado")
-                                        
-                                        # Tentar mostrar stack trace
-                                        import traceback
-                                        stack_trace = traceback.format_exc()
-                                        app_logger.error(f"[{idx+1}] Stack trace:\n{stack_trace}")
-                                        
-                                        # Adicionar ao log visual
-                                        logs.append(f"  ❌ ERRO: {erro_msg[:80]}")
-                                        log_text.code("\n".join(logs[-20:]))
-                                        
-                                        resultados.append({
-                                            'nome': record.get('nome', 'N/A'),
-                                            'cpf': record.get('cpf', 'N/A'),
-                                            'status': '❌ Erro',
-                                            'erro': erro_msg[:100]  # Limitar tamanho
-                                        })
-                                        
-                                        # Adicionar detalhes do erro ao status
-                                        status_text.text(f"❌ Erro no registro {idx+1}: {erro_msg[:50]}...")
-                                    
-                                    # Atualizar progresso
-                                    progress = (idx + 1) / len(records_to_process)
-                                    progress_bar.progress(progress)
-                                
-                                # Finalizar
-                                status_text.text("✅ Processamento concluído!")
-                                
-                                st.markdown("### 5️⃣ Resultado do Processamento")
-                                
-                                col1, col2, col3 = st.columns(3)
-                                
-                                with col1:
-                                    st.metric("Total Processado", len(records_to_process))
-                                
-                                with col2:
-                                    st.metric("✅ Sucessos", sucessos)
-                                
-                                with col3:
-                                    st.metric("❌ Falhas", falhas)
-                                
-                                # Tabela de resultados
-                                st.markdown("### 📊 Detalhamento")
-                                
-                                import pandas as pd
-                                df_result = pd.DataFrame(resultados)
-                                st.dataframe(df_result, use_container_width=True)
-                                
-                                # Gerar ZIP com PDFs baixados dos links IPM
-                                if sucessos > 0:
-                                    st.success(f"🎉 {sucessos} NFS-e emitidas com sucesso!")
-
-                                    try:
-                                        with st.spinner("📦 Gerando PDFs e criando ZIP..."):
-                                            notas_recentes = st.session_state.emitted_nfse[-sucessos:]
-                                            zip_buffer, baixados, erros_dl = _gerar_zip_pdfs_ipm(notas_recentes)
-                                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                            zip_filename = f"nfse_lote_{timestamp}.zip"
-
-                                        if baixados > 0:
-                                            st.success(f"✅ {baixados}/{sucessos} PDFs prontos para download!")
-                                            st.download_button(
-                                                label=f"📥 Baixar {baixados} PDFs (ZIP)",
-                                                data=zip_buffer,
-                                                file_name=zip_filename,
-                                                mime="application/zip",
-                                                use_container_width=True,
-                                                type="primary",
-                                            )
-                                        else:
-                                            st.warning("⚠️ PDFs ainda não disponíveis nos links da Prefeitura.")
-                                            st.info("💡 Use os links individuais em 'NFS-e Emitidas' para baixar depois.")
-
-                                        if erros_dl:
-                                            with st.expander(f"⚠️ {len(erros_dl)} PDFs não baixados"):
-                                                for err in erros_dl:
-                                                    st.text(err)
-
-                                    except Exception as e:
-                                        st.error(f"❌ Erro ao preparar ZIP: {e}")
-                                        app_logger.error(f"Erro ao gerar ZIP de PDFs IPM: {e}", exc_info=True)
-                
                 else:
                     st.error("❌ Não foi possível extrair dados do PDF!")
             
