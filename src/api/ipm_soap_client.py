@@ -17,8 +17,9 @@ class IPMSoapClient:
         self.base_url = settings.IPM_WEBSERVICE_URL.rstrip("/")
         # Login deve conter apenas números (error [144])
         import re
-        self.usuario = re.sub(r"\D", "", settings.IPM_USUARIO)
-        self.senha = settings.IPM_SENHA
+        from src.utils.runtime_config import get_ipm_senha, get_ipm_usuario
+        self.usuario = re.sub(r"\D", "", get_ipm_usuario())
+        self.senha = get_ipm_senha()
         self.timeout = 60
 
     async def enviar_lote_rps_sincrono(self, xml_content: str) -> dict:

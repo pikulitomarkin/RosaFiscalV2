@@ -641,7 +641,8 @@ def render_overview():
         st.metric("Sistema", "✅ Operacional")
     
     with col4:
-        st.metric("Certificado", "✅ Válido")
+        from src.utils.runtime_config import ipm_senha_configurada
+        st.metric("IPM", "✅ OK" if ipm_senha_configurada() else "⚠️ Senha")
     
     st.markdown("---")
     
@@ -1675,55 +1676,121 @@ def show_xml_content(xml_path):
 
 def render_settings():
     """Renderiza página de configurações."""
+    from src.utils.runtime_config import (
+        PRESTADOR_OFICIAL,
+        get_ipm_senha,
+        get_ipm_usuario,
+        ipm_senha_configurada,
+        save_ipm_credentials,
+    )
+
     st.title("⚙️ Configurações do Sistema")
     st.markdown("---")
-    
-    # Informações do certificado
+
+    # Prestador oficial (Nathalia) — identidade do emissor, não o subject de PEM de terceiros
+    st.markdown("### 🏥 Prestador (emissor)")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"**CNPJ:** {PRESTADOR_OFICIAL['cnpj']}")
+        st.markdown(f"**Razão social:** {PRESTADOR_OFICIAL['razao_social']}")
+        st.markdown(f"**Nome fantasia:** {PRESTADOR_OFICIAL['nome_fantasia']}")
+    with col2:
+        st.markdown(f"**Inscrição municipal:** {PRESTADOR_OFICIAL['inscricao_municipal']}")
+        st.markdown("**Município:** Santa Rosa - RS")
+        st.success("✅ Prestador: Nathalia Gabriela")
+
+    st.markdown("---")
+
+    st.markdown("### 🔑 Webservice IPM (Atende.Net)")
+    st.caption("Senha usada na emissão das NFS-e. Salva no volume do servidor (não no Git).")
+    ipm_user = get_ipm_usuario()
+    senha_ok = ipm_senha_configurada()
+    if senha_ok:
+        st.success("Senha IPM já configurada neste servidor.")
+    else:
+        st.warning("Senha IPM ainda não configurada — a emissão falha até você salvar.")
+
+    with st.form("ipm_credentials_form"):
+        usuario_input = st.text_input(
+            "Usuário IPM (CNPJ)",
+            value=ipm_user or PRESTADOR_OFICIAL["cnpj"],
+            help="Normalmente o CNPJ do prestador, só números.",
+        )
+        senha_input = st.text_input(
+            "Senha IPM",
+            type="password",
+            placeholder="Digite a senha do webservice Atende.Net",
+            help="Deixe em branco para manter a senha já salva.",
+        )
+        submitted_ipm = st.form_submit_button(
+            "💾 Salvar credenciais IPM",
+            type="primary",
+            use_container_width=True,
+        )
+
+    if submitted_ipm:
+        if not senha_input and not senha_ok:
+            st.error("Informe a senha IPM para salvar.")
+        else:
+            save_ipm_credentials(usuario_input, senha_input)
+            try:
+                object.__setattr__(settings, "IPM_USUARIO", get_ipm_usuario())
+                if senha_input:
+                    object.__setattr__(settings, "IPM_SENHA", get_ipm_senha())
+            except Exception:
+                pass
+            st.success("✅ Credenciais IPM salvas.")
+            st.rerun()
+
+    st.markdown("---")
+
     st.markdown("### 🔐 Certificado Digital")
-    
     try:
         cert_info = get_certificate_manager().get_certificate_info()
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown(f"**CNPJ:** {cert_info.get('subject_cnpj', 'N/A')}")
-            st.markdown(f"**Nome:** {cert_info.get('subject_cn', 'N/A')}")
-            st.markdown(f"**Emissor:** {cert_info.get('issuer_cn', 'N/A')}")
-        
-        with col2:
-            validade = cert_info.get('not_after', 'N/A')
-            st.markdown(f"**Válido até:** {validade}")
-            
-            if cert_info.get('is_valid'):
-                st.success("✅ Certificado válido")
-            else:
-                st.error("❌ Certificado inválido ou expirado")
-    
+        cert_cnpj = "".join(ch for ch in str(cert_info.get("subject_cnpj") or "") if ch.isdigit())
+        esperado = PRESTADOR_OFICIAL["cnpj"]
+
+        if cert_cnpj and cert_cnpj != esperado:
+            st.warning(
+                "O arquivo de certificado instalado **não pertence** a "
+                f"{PRESTADOR_OFICIAL['nome_fantasia']} (CNPJ {esperado}). "
+                "Ele **não** é usado como identidade do emissor neste dashboard. "
+                "Substitua `certificados/cert.pem` e `key.pem` pelo A1 da Nathalia quando necessário."
+            )
+        elif cert_cnpj:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(f"**CNPJ:** {cert_info.get('subject_cnpj', 'N/A')}")
+                st.markdown(f"**Nome:** {cert_info.get('subject_cn', 'N/A')}")
+                st.markdown(f"**Emissor:** {cert_info.get('issuer_cn', 'N/A')}")
+            with col2:
+                st.markdown(f"**Válido até:** {cert_info.get('not_after', 'N/A')}")
+                if cert_info.get("is_valid"):
+                    st.success("✅ Certificado válido")
+                else:
+                    st.error("❌ Certificado inválido ou expirado")
+        else:
+            st.info("Nenhum certificado A1 carregado. A emissão IPM usa usuário/senha acima.")
     except Exception as e:
-        st.error(f"❌ Erro ao carregar informações do certificado: {e}")
-    
+        st.info(f"Certificado A1 não carregado ({e}). A emissão IPM usa usuário/senha acima.")
+
     st.markdown("---")
-    
-    # Informações da API
-    st.markdown("### 🌐 Configuração da API")
-    
+
+    st.markdown("### 🌐 Integração")
     col1, col2 = st.columns(2)
-    
     with col1:
-        st.markdown(f"**Ambiente:** {getattr(settings, 'NFSE_API_AMBIENTE', 'HOMOLOGACAO')}")
-        st.markdown(f"**Base URL:** `{settings.NFSE_API_BASE_URL}`")
-    
+        st.markdown("**Canal:** IPM / Atende.Net (Santa Rosa-RS)")
+        st.markdown(f"**URL:** `{settings.IPM_WEBSERVICE_URL}`")
     with col2:
-        st.markdown(f"**Timeout:** {getattr(settings, 'NFSE_API_TIMEOUT', 30)}s")
-        st.markdown(f"**Max Retries:** {getattr(settings, 'NFSE_API_MAX_RETRIES', 3)}")
-    
+        ambiente = "Teste" if settings.IPM_AMBIENTE_TESTE else "Produção"
+        st.markdown(f"**Ambiente IPM:** {ambiente}")
+        st.markdown(f"**Usuário IPM:** `{get_ipm_usuario()}`")
+
     st.markdown("---")
-    
+
     # Ações em Lote
     st.markdown("### 📦 Ações em Lote")
-    st.markdown("Gerencie todas as notas fiscais emitidas de uma vez")
-    
+    st.markdown("Gerencie todas as notas fiscais emitidas de uma vez")    
     col1, col2 = st.columns(2)
     
     with col1:
