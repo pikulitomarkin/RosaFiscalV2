@@ -560,6 +560,18 @@ def login_page():
     st.markdown("### Portal de Automação de Notas Fiscais")
     st.caption("Nathalia Gabriela · Santa Rosa-RS · VPS produção")
 
+    # Cutover: deixa o bloqueio IPM visível antes mesmo do login
+    try:
+        from src.utils.runtime_config import ipm_senha_configurada as _login_ipm_ok
+        if not _login_ipm_ok():
+            st.warning(
+                "Cutover VPS **7/8**: falta a **Senha IPM** (portal NFS-e Santa Rosa, "
+                "CNPJ `56169351000185`). Após entrar, abra **Configurações** e salve. "
+                "A senha do dashboard `admin` **não** é a senha IPM."
+            )
+    except Exception:
+        pass
+
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
@@ -580,6 +592,10 @@ def login_page():
                     st.rerun()
                 else:
                     st.error("❌ Usuário ou senha inválidos")
+                    st.caption(
+                        "Se a senha admin foi rotacionada na migração, recupere via SSH: "
+                        "`cat /root/rosafiscal_rotated_credentials.txt`"
+                    )
 
 
 def logout():

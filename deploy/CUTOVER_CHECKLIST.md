@@ -15,8 +15,9 @@ Atualizado com evidência na VPS `184.107.179.79`.
 | Rede Atende.Net | `ws-santarosa...` HTTP 401 com auth inválida | OK |
 | Prestador Nathalia | UI Configurações (sem Gabriel Saleh) | OK |
 | Campo senha IPM no dashboard | Configurações + runtime_config volume | OK |
-| **IPM_SENHA configurada** | `.env` len=0, runtime sem senha | **FAIL** |
+| **IPM_SENHA configurada** | `validate_migracao` 7 OK / 1 FAIL | **FAIL** (único) |
 | Emissão / test_ipm_auth | bloqueado sem senha | **PENDENTE** |
+| Gate desligar Railway | `railway_shutdown_gate.sh` exit 2 enquanto blocker | OK (proteção) |
 | Cert A1 | opcional no fluxo IPM | WARN |
 | Trocar senha root | rotacionada; ver `/root/rosafiscal_rotated_credentials.txt` | **OK** (ops: copiar p/ cofre) |
 | Trocar senha admin dashboard | rotacionada no Postgres + `.env` | **OK** (ops: copiar p/ cofre) |
