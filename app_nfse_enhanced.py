@@ -569,6 +569,20 @@ def login_page():
                 "CNPJ `56169351000185`). Após entrar, abra **Configurações** e salve. "
                 "A senha do dashboard `admin` **não** é a senha IPM."
             )
+            with st.expander("Status da migração (ao vivo)", expanded=False):
+                st.markdown(
+                    """
+| Check | Estado |
+| --- | --- |
+| App / HTTPS | OK |
+| Banco + histórico | OK |
+| Rede Atende.Net | OK |
+| **Senha IPM** | **PENDENTE** |
+
+Portal: [nfse-santarosa.atende.net](https://nfse-santarosa.atende.net/) ·  
+Modelo p/ contabilidade: `deploy/SOLICITAR_SENHA_IPM.md`
+                    """
+                )
     except Exception:
         pass
 

@@ -52,7 +52,7 @@ if [[ "$ready" != "true" ]]; then
   fi
 fi
 
-cat <<EOF
+json_out=$(cat <<EOF
 {
   "cutover_ready": $(to_json_bool "$ready"),
   "app_up": $(to_json_bool "$app_up"),
@@ -69,3 +69,16 @@ cat <<EOF
   "url": "https://vps12436.panel.icontainer.site/"
 }
 EOF
+)
+printf '%s\n' "$json_out"
+# Persist for cron/UI (host + volume appdata quando possível)
+printf '%s\n' "$json_out" > "$ROOT/CUTOVER_STATUS.json" || true
+if docker compose cp "$ROOT/CUTOVER_STATUS.json" app:/app/data/CUTOVER_STATUS.json >/dev/null 2>&1; then
+  :
+else
+  # fallback: volume mount path on host
+  vol="$(docker volume inspect rosafiscal_appdata -f '{{.Mountpoint}}' 2>/dev/null || true)"
+  if [[ -n "$vol" && -d "$vol" ]]; then
+    cp -f "$ROOT/CUTOVER_STATUS.json" "$vol/CUTOVER_STATUS.json" || true
+  fi
+fi
