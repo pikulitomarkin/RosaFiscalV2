@@ -19,6 +19,13 @@ Login: use os mesmos usuários do Railway (`admin`, `medico`, …).
 ```
 Não cole a senha no chat.
 
+
+### Backup automático
+```bash
+chmod 700 /opt/rosafiscal/deploy/scripts/backup_nfse.sh
+(crontab -l 2>/dev/null; echo "15 3 * * * /opt/rosafiscal/deploy/scripts/backup_nfse.sh >> /var/log/rosafiscal-backup.log 2>&1") | crontab -
+```
+
 ## Pré-requisitos na VPS
 - Ubuntu 22.04/24.04+ (ou similar)
 - Docker + Docker Compose plugin
