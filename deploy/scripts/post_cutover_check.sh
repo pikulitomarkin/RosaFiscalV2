@@ -5,7 +5,8 @@ ROOT=/opt/rosafiscal
 cd "$ROOT"
 
 bash deploy/scripts/validate_migracao.sh
-docker compose exec -T app python deploy/scripts/test_ipm_auth.py
+# PYTHONPATH=/app já é o WORKDIR do container; o script também ajusta sys.path
+docker compose exec -T -w /app app python deploy/scripts/test_ipm_auth.py
 bash deploy/scripts/cutover_status.sh
 
 echo
