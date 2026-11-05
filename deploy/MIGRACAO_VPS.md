@@ -3,21 +3,25 @@
 ## Status atual (VPS `184.107.179.79`)
 - App em `/opt/rosafiscal` via Docker Compose (`app` + Postgres)
 - **HTTPS (produção):** https://vps12436.panel.icontainer.site/
-- Alternativas: `http://IP:8501` e proxy `http://IP:8088`
+- Alternativas: `http://184.107.179.79:8501` e proxy `http://184.107.179.79:8088`
 - Banco restaurado do Railway: **3662** emissões + **3** usuários
-- Histórico JSON gerado em `/app/data/nfse_emitidas.json`
-- Certificado A1 (`cert.pem`/`key.pem`) instalado
-- **Pendente:** `IPM_SENHA` no `.env` (obrigatório para emitir)
+- Histórico JSON em volume Docker `appdata` → `/app/data/nfse_emitidas.json`
+- Prestador oficial: **Nathalia Gabriela** (CNPJ `56169351000185`) — identidade Gabriel Saleh removida da UI
+- Certificado A1 opcional no fluxo IPM (PEM de terceiro quarentenado em `certificados/backup_gabriel`)
+- **Pendente (bloqueia emissão):** `IPM_SENHA` — salve no dashboard (**Configurações → Senha IPM**) ou via script abaixo
 - Docker habilitado no boot (`systemctl enable docker`)
-- Script: `/opt/rosafiscal/deploy/scripts/set_ipm_senha.sh`
+- Scripts: `set_ipm_senha.sh`, `validate_migracao.sh`, `test_ipm_auth.py`
 
-Login: use os mesmos usuários do Railway (`admin`, `medico`, …).
+Login admin: usuário `admin` (senha definida na restauração — troque após o cutover; não versionar senhas).
 
-### Definir IPM_SENHA (na VPS)
+### Definir IPM_SENHA
+**Preferencial — dashboard:** https://vps12436.panel.icontainer.site/ → Configurações → Webservice IPM → salvar → Testar conexão IPM.
+
+**Alternativa — SSH na VPS:**
 ```bash
 /opt/rosafiscal/deploy/scripts/set_ipm_senha.sh
 ```
-Não cole a senha no chat.
+O script grava `.env` **e** `runtime_config.json` no volume. Não cole a senha no chat.
 
 
 ### Validar cutover
