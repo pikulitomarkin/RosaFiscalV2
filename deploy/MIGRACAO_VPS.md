@@ -44,6 +44,19 @@ Há um watcher (cron) que aplica sozinho se o arquivo aparecer:
 3. Contabilidade / Domínio Contábil (e-mail do prestador)
 Não cole a senha neste chat.
 
+### Puxar do Railway (CLI)
+Com `RAILWAY_TOKEN` e projeto linkado na VPS/agent:
+```bash
+export RAILWAY_TOKEN=...   # não commitar
+railway link               # uma vez
+/opt/rosafiscal/deploy/scripts/pull_ipm_from_railway.sh
+```
+
+### Status rápido
+```bash
+/opt/rosafiscal/deploy/scripts/cutover_status.sh
+```
+
 
 ### Validar cutover
 ```bash
