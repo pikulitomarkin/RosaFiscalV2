@@ -18,11 +18,21 @@ Atualizado com evidência na VPS `184.107.179.79`.
 | **IPM_SENHA configurada** | `.env` len=0, runtime sem senha | **FAIL** |
 | Emissão / test_ipm_auth | bloqueado sem senha | **PENDENTE** |
 | Cert A1 | opcional no fluxo IPM | WARN |
-| Trocar senha root | exposta no screenshot do painel | PENDENTE (ops) |
+| Trocar senha root | rotacionada; ver `/root/rosafiscal_rotated_credentials.txt` | **OK** (ops: copiar p/ cofre) |
+| Trocar senha admin dashboard | rotacionada no Postgres + `.env` | **OK** (ops: copiar p/ cofre) |
+| Código VPS = tip da branch | `3bf6d68` migracao-vps | OK |
 | Desligar Railway | só após emissão validada | PENDENTE |
 
 ## Bloqueio atual
-Salvar a **senha do portal** https://nfse-santarosa.atende.net/ (login CNPJ) em Configurações → Senha IPM.
+Salvar a **senha do portal** https://nfse-santarosa.atende.net/ (login CNPJ `56169351000185`) em:
+1. Secrets Cursor `IPM_SENHA`, e/ou
+2. Dashboard VPS → Configurações → Senha IPM, e/ou
+3. Arquivo `/opt/rosafiscal/secrets/ipm_senha` (watcher cron aplica)
+
+Credenciais root/admin rotacionadas (não versionadas):
+```bash
+ssh -i KEY root@184.107.179.79 'cat /root/rosafiscal_rotated_credentials.txt'
+```
 
 Validar depois:
 ```bash
