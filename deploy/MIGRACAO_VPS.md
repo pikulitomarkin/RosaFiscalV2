@@ -1,5 +1,15 @@
 # Migração Railway → VPS
 
+## Status atual (VPS `184.107.179.79`)
+- App em `/opt/rosafiscal` via Docker Compose (`app` + Postgres)
+- URLs: `http://IP:8501` e proxy iContainer `http://IP:8088`
+- Banco restaurado do Railway: **3662** emissões + **3** usuários
+- Histórico JSON gerado em `/app/data/nfse_emitidas.json`
+- Certificado A1 (`cert.pem`/`key.pem`) instalado
+- **Pendente:** `IPM_SENHA` no `.env` (obrigatório para emitir)
+
+Login: use os mesmos usuários do Railway (`admin`, `medico`, …).
+
 ## Pré-requisitos na VPS
 - Ubuntu 22.04/24.04+ (ou similar)
 - Docker + Docker Compose plugin
