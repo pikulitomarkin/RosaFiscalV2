@@ -22,6 +22,17 @@ class IPMSoapClient:
         self.senha = get_ipm_senha()
         self.timeout = 60
 
+    def _require_credentials(self) -> None:
+        if not self.usuario:
+            raise RuntimeError(
+                "IPM_USUARIO não configurado. Defina o CNPJ do prestador nas Configurações."
+            )
+        if not self.senha:
+            raise RuntimeError(
+                "IPM_SENHA não configurada. Vá em Configurações → Webservice IPM, "
+                "salve a senha Atende.Net e tente de novo."
+            )
+
     async def enviar_lote_rps_sincrono(self, xml_content: str) -> dict:
         """Envia XML de NFS-e via POST multipart/form-data e retorna resultado."""
         return await self._post_xml(xml_content)
@@ -32,6 +43,7 @@ class IPMSoapClient:
 
     async def _post_xml(self, xml_content: str) -> dict:
         """Envia XML como arquivo via multipart/form-data com Basic Auth."""
+        self._require_credentials()
         app_logger.info(f"IPM REST: POST → {self.base_url}")
 
         auth = (self.usuario, self.senha)

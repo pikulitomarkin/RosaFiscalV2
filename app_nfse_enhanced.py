@@ -821,9 +821,15 @@ def render_single_emission():
     
     # Processar submissão FORA do form
     if submitted:
+        from src.utils.runtime_config import ipm_senha_configurada as _ipm_ready
         # Validação básica
         if not tomador_cpf or not tomador_nome or not valor_servico:
             st.error("❌ Preencha todos os campos obrigatórios (*)")
+        elif not _ipm_ready():
+            st.error(
+                "❌ Senha IPM não configurada. Vá em **⚙️ Configurações**, "
+                "salve a senha do Atende.Net e tente novamente."
+            )
         else:
             cpf_limpo = tomador_cpf.replace('.', '').replace('-', '').replace('/', '')
 
@@ -915,6 +921,14 @@ def _processar_emissao_lote(
     discriminacao,
 ):
     """Processa emissão em lote FORA do st.form para não interromper o Streamlit."""
+    from src.utils.runtime_config import ipm_senha_configurada
+
+    if not ipm_senha_configurada():
+        st.error(
+            "❌ Senha IPM não configurada. Vá em **⚙️ Configurações**, "
+            "salve a senha do Atende.Net e tente o lote novamente."
+        )
+        return
 
     st.markdown("### 4️⃣ Processamento em Andamento")
 
