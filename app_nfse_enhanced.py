@@ -1744,14 +1744,14 @@ def render_settings():
         with st.expander("Como obter esta senha", expanded=True):
             st.markdown(
                 """
-1. Abra o portal da prefeitura: [nfse-santarosa.atende.net](https://nfse-santarosa.atende.net/)
-2. Entre com o **CNPJ** `56169351000185` e a senha do contribuinte  
-   (é a senha do sistema Fiscal Web / NFS-e — **não** a senha `admin` deste dashboard)
-3. Se não lembrar: use “Esqueci a senha” no portal ou peça à contabilidade (Domínio Contábil)
-4. Volte aqui, cole a senha em **Senha IPM** e clique em **Salvar**
-5. Depois use **Testar conexão IPM**
+1. Abra o login do município:  
+   [nfse-santarosa.atende.net](https://nfse-santarosa.atende.net/autoatendimento/servicos/nfse)
+2. Use **CPF/CNPJ** `56169351000185` e a **Senha** do contribuinte  
+   (Fiscal Web / NFS-e — **não** a senha `admin` deste dashboard)
+3. Se não lembrar: clique **Recuperar Senha** nesse portal, ou peça à contabilidade
+4. Volte aqui → **Senha IPM** → **Salvar** → **Testar conexão IPM**
 
-Também pode existir em **Railway → Variables → IPM_SENHA** (projeto antigo).
+Alternativa: variável `IPM_SENHA` no Railway (projeto antigo).
                 """
             )
 
