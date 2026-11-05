@@ -247,15 +247,16 @@ async def exemplo_emissao():
     
     # Dados do prestador
     prestador = PrestadorServico(
-        cnpj="59418245000186",
-        razao_social="GABRIEL SALEH SERVICOS MEDICOS LTDA",
-        nome_fantasia="Dr. Gabriel Saleh",
-        logradouro="Rua Felipe Schmidt",
-        numero="100",
-        bairro="Centro",
-        municipio="Florianopolis",
-        uf="SC",
-        cep="88010000"
+        cnpj="56169351000185",
+        inscricao_municipal="56937",
+        razao_social="NATHALIA GABRIELA SERVICOS DE SAUDE LTDA",
+        nome_fantasia="NATHALIA GABRIELA",
+        logradouro="Rua Tarquinio de Oliveira",
+        numero="249",
+        bairro="Cruzeiro",
+        municipio="Santa Rosa",
+        uf="RS",
+        cep="98789104",
     )
     
     # Dados do tomador

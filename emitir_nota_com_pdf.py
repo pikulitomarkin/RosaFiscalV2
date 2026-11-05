@@ -29,7 +29,7 @@ async def emitir_nota_do_pdf():
     print("="*80)
     print(f"🌐 URL: https://adn.nfse.gov.br/adn/DFe")
     print(f"🔐 Ambiente: PRODUCAO")
-    print(f"📜 Certificado: GABRIEL SALEH SERVICOS MEDICOS LTDA")
+    print(f"📜 Prestador: NATHALIA GABRIELA SERVICOS DE SAUDE LTDA")
     print("="*80 + "\n")
     
     # ========== CARREGAR PDF ==========
@@ -133,16 +133,16 @@ async def emitir_nota_do_pdf():
     
     # ========== CONFIGURAÇÃO DO PRESTADOR ==========
     prestador = PrestadorServico(
-        cnpj="59418245000186",
-        inscricao_municipal="8259069",  # Indicador Municipal correto
-        razao_social="GABRIEL SALEH SERVICOS MEDICOS LTDA",
-        nome_fantasia="GABRIEL SALEH",
-        logradouro="RUA DR FLAVIO AUGUSTO TEIXEIRA FILHO",
-        numero="40",
-        bairro="CENTRO",
-        municipio="FLORIANOPOLIS",  # Município correto
-        uf="SC",  # Estado correto
-        cep="88010000"  # CEP Florianópolis
+        cnpj="56169351000185",
+        inscricao_municipal="56937",
+        razao_social="NATHALIA GABRIELA SERVICOS DE SAUDE LTDA",
+        nome_fantasia="NATHALIA GABRIELA",
+        logradouro="RUA TARQUINIO DE OLIVEIRA",
+        numero="249",
+        bairro="CRUZEIRO",
+        municipio="SANTA ROSA",
+        uf="RS",
+        cep="98789104",
     )
     
     # ========== DADOS DO TOMADOR ==========
