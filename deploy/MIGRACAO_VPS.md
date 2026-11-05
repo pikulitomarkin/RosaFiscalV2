@@ -12,9 +12,17 @@
 - Docker habilitado no boot (`systemctl enable docker`)
 - Scripts: `set_ipm_senha.sh`, `validate_migracao.sh`, `test_ipm_auth.py`
 
-Login admin: usuário `admin` (senha definida na restauração — troque após o cutover; não versionar senhas).
+Login admin: usuário `admin`. Senha root/admin rotacionadas na VPS — recuperar com:
+`ssh … 'cat /root/rosafiscal_rotated_credentials.txt'` (apagar o arquivo após copiar ao cofre).
 
-### Definir IPM_SENHA
+### Definir IPM_SENHA (obrigatório para emissão)
+
+Do Cloud Agent (com secret `IPM_SENHA` no ambiente Cursor):
+```bash
+./deploy/scripts/agent_apply_ipm_senha.sh
+```
+
+Na VPS:
 **Preferencial — dashboard:** https://vps12436.panel.icontainer.site/ → Configurações → Webservice IPM → salvar → Testar conexão IPM.
 
 **Alternativa — SSH na VPS:**
