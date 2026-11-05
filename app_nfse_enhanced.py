@@ -535,16 +535,18 @@ def autenticar_usuario_db(username: str, password: str) -> bool:
             )
             row = cur.fetchone()
             conn.close()
-            if not row:
-                return False
-            password_hash, is_active = row
-            if not is_active:
-                return False
-            return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+            if row:
+                password_hash, is_active = row
+                if is_active and bcrypt.checkpw(
+                    password.encode("utf-8"), password_hash.encode("utf-8")
+                ):
+                    return True
+                # Senha do banco não bate — tenta fallback ADMIN_* abaixo
+            # Usuário inexistente no banco: também tenta fallback ADMIN_*
         except Exception as e:
             app_logger.error(f"Erro ao autenticar via banco: {e}")
 
-    # Fallback: credenciais ADMIN_* do .env (útil em bootstrap / SQLite)
+    # Fallback: credenciais ADMIN_* do .env (bootstrap / senha redefinida na VPS)
     try:
         return auth_manager.authenticate_user(username, password)
     except Exception as e:
