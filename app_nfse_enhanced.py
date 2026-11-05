@@ -1739,8 +1739,21 @@ def render_settings():
         st.error(
             "Senha IPM ainda não configurada — emissão bloqueada. "
             "Use a senha do login CNPJ no portal NFS-e Santa Rosa "
-            "(https://nfse-santarosa.atende.net/) ou peça à contabilidade."
+            "ou peça à contabilidade."
         )
+        with st.expander("Como obter esta senha", expanded=True):
+            st.markdown(
+                """
+1. Abra o portal da prefeitura: [nfse-santarosa.atende.net](https://nfse-santarosa.atende.net/)
+2. Entre com o **CNPJ** `56169351000185` e a senha do contribuinte  
+   (é a senha do sistema Fiscal Web / NFS-e — **não** a senha `admin` deste dashboard)
+3. Se não lembrar: use “Esqueci a senha” no portal ou peça à contabilidade (Domínio Contábil)
+4. Volte aqui, cole a senha em **Senha IPM** e clique em **Salvar**
+5. Depois use **Testar conexão IPM**
+
+Também pode existir em **Railway → Variables → IPM_SENHA** (projeto antigo).
+                """
+            )
 
     with st.form("ipm_credentials_form"):
         usuario_input = st.text_input(
@@ -1751,8 +1764,8 @@ def render_settings():
         senha_input = st.text_input(
             "Senha IPM",
             type="password",
-            placeholder="Digite a senha do webservice Atende.Net",
-            help="Deixe em branco para manter a senha já salva.",
+            placeholder="Senha do portal NFS-e (mesmo login do CNPJ)",
+            help="Senha de acesso ao sistema NFS-e Santa Rosa. Em branco = manter a já salva.",
         )
         submitted_ipm = st.form_submit_button(
             "💾 Salvar credenciais IPM",
