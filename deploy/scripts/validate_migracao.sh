@@ -30,8 +30,9 @@ check "postgres com emissoes" bash -c 'c=$(docker compose exec -T db psql -U nfs
 check "postgres com usuarios" bash -c 'c=$(docker compose exec -T db psql -U nfse -d nfse -Atc "select count(*) from usuarios"); test "$c" -gt 0'
 check "json historico" bash -c 'docker compose exec -T app test -s /app/data/nfse_emitidas.json'
 check "IPM_SENHA definida" bash -c 'docker compose exec -T app python - <<"PY"
-from src.utils.runtime_config import ipm_senha_configurada
-raise SystemExit(0 if ipm_senha_configurada() else 1)
+from src.utils.runtime_config import ipm_senha_configurada, get_ipm_senha
+ok = ipm_senha_configurada() and len(get_ipm_senha()) >= 4
+raise SystemExit(0 if ok else 1)
 PY'
 
 echo "---"

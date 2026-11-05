@@ -33,6 +33,17 @@ chmod 600 /opt/rosafiscal/secrets/ipm_senha
 /opt/rosafiscal/deploy/scripts/apply_ipm_senha_from_file.sh
 ```
 
+Há um watcher (cron) que aplica sozinho se o arquivo aparecer:
+```bash
+* * * * * /opt/rosafiscal/deploy/scripts/watch_ipm_senha.sh >> /var/log/rosafiscal-ipm-watch.log 2>&1
+```
+
+### Onde achar a senha
+1. Dashboard Atende.Net / prefeitura (webservice NFS-e)
+2. Variáveis do projeto **Railway** (se ainda existir): `IPM_SENHA`
+3. Contabilidade / Domínio Contábil (e-mail do prestador)
+Não cole a senha neste chat.
+
 
 ### Validar cutover
 ```bash
