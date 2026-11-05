@@ -625,8 +625,16 @@ def render_dashboard():
 
 def render_overview():
     """Renderiza página de overview."""
+    from src.utils.runtime_config import ipm_senha_configurada, PRESTADOR_OFICIAL
+
     st.title("📊 Dashboard - Visão Geral")
-    
+    st.caption(f"Emissor: {PRESTADOR_OFICIAL['razao_social']} · CNPJ {PRESTADOR_OFICIAL['cnpj']}")
+    if not ipm_senha_configurada():
+        st.warning(
+            "Senha IPM ainda não configurada. Vá em **⚙️ Configurações**, "
+            "informe a senha do Atende.Net e salve para poder emitir NFS-e."
+        )
+
     # Métricas
     col1, col2, col3, col4 = st.columns(4)
     
@@ -641,7 +649,6 @@ def render_overview():
         st.metric("Sistema", "✅ Operacional")
     
     with col4:
-        from src.utils.runtime_config import ipm_senha_configurada
         st.metric("IPM", "✅ OK" if ipm_senha_configurada() else "⚠️ Senha")
     
     st.markdown("---")

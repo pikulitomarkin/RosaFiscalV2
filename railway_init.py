@@ -104,11 +104,10 @@ def setup_certificates():
             traceback.print_exc()
             return False
     else:
-        print("\n❌ CERTIFICADOS NÃO CONFIGURADOS!")
-        print("   Você precisa configurar no Railway:")
-        print("   1. CERTIFICATE_CERT_PEM (Base64 do cert.pem)")
-        print("   2. CERTIFICATE_KEY_PEM (Base64 do key.pem)")
-        print("\n   Verifique o arquivo RAILWAY_VARIAVEIS.txt no repositório")
+        print("\n⚠️ CERTIFICADOS A1 NÃO CONFIGURADOS")
+        print("   No fluxo IPM/Atende.Net a emissão usa usuário/senha (Basic Auth).")
+        print("   Certificado PEM é opcional nesse canal; configure se for usar Sefin/ADN.")
+        print("   Variáveis: CERTIFICATE_CERT_PEM / CERTIFICATE_KEY_PEM ou arquivos em certificados/")
         return False
 
 
@@ -141,8 +140,7 @@ def main():
             import traceback
             traceback.print_exc()
     else:
-        print("\n❌ Falha na configuração de certificados")
-        print("   O sistema pode não funcionar corretamente para emissão de NFS-e")
+        print("\nℹ️ Sem certificado A1 — OK para emissão via IPM (senha no dashboard/Configurações).")
     
     print("\n✅ Inicialização concluída!")
     print("   Iniciando Streamlit...\n")
