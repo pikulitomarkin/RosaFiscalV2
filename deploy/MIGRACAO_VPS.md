@@ -7,8 +7,16 @@
 - Histórico JSON gerado em `/app/data/nfse_emitidas.json`
 - Certificado A1 (`cert.pem`/`key.pem`) instalado
 - **Pendente:** `IPM_SENHA` no `.env` (obrigatório para emitir)
+- Docker habilitado no boot (`systemctl enable docker`)
+- Script: `/opt/rosafiscal/deploy/scripts/set_ipm_senha.sh`
 
 Login: use os mesmos usuários do Railway (`admin`, `medico`, …).
+
+### Definir IPM_SENHA (na VPS)
+```bash
+/opt/rosafiscal/deploy/scripts/set_ipm_senha.sh
+```
+Não cole a senha no chat.
 
 ## Pré-requisitos na VPS
 - Ubuntu 22.04/24.04+ (ou similar)
