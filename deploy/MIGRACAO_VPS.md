@@ -23,6 +23,16 @@ Login admin: usuário `admin` (senha definida na restauração — troque após 
 ```
 O script grava `.env` **e** `runtime_config.json` no volume. Não cole a senha no chat.
 
+**Alternativa — arquivo local (depois é apagado):**
+```bash
+umask 077
+mkdir -p /opt/rosafiscal/secrets
+# uma linha com a senha Atende.Net:
+nano /opt/rosafiscal/secrets/ipm_senha
+chmod 600 /opt/rosafiscal/secrets/ipm_senha
+/opt/rosafiscal/deploy/scripts/apply_ipm_senha_from_file.sh
+```
+
 
 ### Validar cutover
 ```bash
