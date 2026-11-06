@@ -22,7 +22,7 @@ Atualizado com evidência na VPS `184.107.179.79`.
 | Trocar senha root | rotacionada; ver `/root/rosafiscal_rotated_credentials.txt` | **OK** (ops: copiar p/ cofre) |
 | Trocar senha admin dashboard | rotacionada no Postgres + `.env` | **OK** (ops: copiar p/ cofre) |
 | Código VPS = tip da branch | sync `cursor/migracao-vps-ddd1` | OK |
-| Restore dry-run do backup | `test_backup_restore.sh` (DB temp) | PENDENTE (rodar na VPS) |
+| Restore dry-run do backup | `20261105_203203` → 3662/3 = prod | **OK** |
 | Desligar Railway | só após emissão validada | PENDENTE |
 
 ## Bloqueio atual
