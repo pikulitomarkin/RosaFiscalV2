@@ -36,10 +36,42 @@ code=$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 8 --max-time 15
   'https://ws-santarosa.atende.net/?pg=rest&service=WNERestServiceNFSe' || echo 000)
 [[ "$code" == "401" || "$code" == "403" || "$code" == "200" ]] && ipm_net_ok=true || true
 
+# Auth real (senha presente): 401 Acesso Negado = credencial inválida.
+# Qualquer outro HTTP (ex.: 200 com erro de negócio no XML) conta como auth OK.
+auth_ok=false
+auth_http=000
+if $senha_ok; then
+  auth_http=$(
+    docker compose exec -T app python - <<"PY" 2>/dev/null || echo 000
+import re
+import httpx
+from src.utils.runtime_config import get_ipm_senha, get_ipm_usuario
+from config.settings import settings
+usuario = re.sub(r"\D", "", get_ipm_usuario() or "")
+senha = get_ipm_senha() or ""
+url = (settings.IPM_WEBSERVICE_URL or "").rstrip("/")
+try:
+    r = httpx.post(
+        url,
+        files={"teste": ("probe.xml", b"<nfse/>", "text/xml")},
+        auth=(usuario, senha),
+        timeout=15.0,
+    )
+    print(r.status_code)
+except Exception:
+    print("000")
+PY
+  )
+  auth_http=$(echo "$auth_http" | tr -d '\r' | tail -n1)
+  if [[ "$auth_http" != "401" && "$auth_http" != "403" && "$auth_http" != "000" ]]; then
+    auth_ok=true
+  fi
+fi
+
 test -s certificados/cert.pem && test -s certificados/key.pem && cert_ok=true || true
 
 ready=false
-if $app_up && $http_ok && $https_ok && [[ "${db_emissoes}" -gt 0 ]] && [[ "${db_usuarios}" -gt 0 ]] && $json_ok && $senha_ok && $ipm_net_ok; then
+if $app_up && $http_ok && $https_ok && [[ "${db_emissoes}" -gt 0 ]] && [[ "${db_usuarios}" -gt 0 ]] && $json_ok && $senha_ok && $auth_ok && $ipm_net_ok; then
   ready=true
 fi
 
@@ -47,6 +79,8 @@ blocker=null
 if [[ "$ready" != "true" ]]; then
   if [[ "$senha_ok" != "true" ]]; then
     blocker='"IPM_SENHA"'
+  elif [[ "$auth_ok" != "true" ]]; then
+    blocker='"IPM_AUTH"'
   else
     blocker='"other"'
   fi
@@ -62,6 +96,8 @@ json_out=$(cat <<EOF
   "db_usuarios": ${db_usuarios:-0},
   "json_historico": $(to_json_bool "$json_ok"),
   "ipm_senha": $(to_json_bool "$senha_ok"),
+  "ipm_auth": $(to_json_bool "$auth_ok"),
+  "ipm_auth_http": "${auth_http}",
   "ipm_network": $(to_json_bool "$ipm_net_ok"),
   "ipm_network_http": "${code}",
   "cert_a1_optional": $(to_json_bool "$cert_ok"),

@@ -15,7 +15,8 @@ Atualizado com evidência na VPS `184.107.179.79`.
 | Rede Atende.Net | `ws-santarosa...` HTTP 401 com auth inválida | OK |
 | Prestador Nathalia | UI Configurações (sem Gabriel Saleh) | OK |
 | Campo senha IPM no dashboard | Configurações + runtime_config volume | OK |
-| **IPM_SENHA configurada** | `validate_migracao` 7 OK / 1 FAIL | **FAIL** (único) |
+| **IPM_SENHA configurada** | chave presente na VPS / runtime_config | OK (valor antigo rejeitado) |
+| **IPM auth Atende.Net** | `test_ipm_auth` / probe HTTP | **FAIL 401** (blocker) |
 | Evidência UI cutover | login VPS mostra alerta 7/8 + CNPJ | OK (artifact) |
 | Evidência portal senha | login NFS-e + link Recuperar Senha | OK (artifact) |
 | Emissão / test_ipm_auth | bloqueado sem senha | **PENDENTE** |
@@ -28,10 +29,12 @@ Atualizado com evidência na VPS `184.107.179.79`.
 | Desligar Railway | só após emissão validada | PENDENTE |
 
 ## Bloqueio atual
-Salvar a **senha do portal** https://nfse-santarosa.atende.net/ (login CNPJ `56169351000185`) em:
-1. Secrets Cursor `IPM_SENHA`, e/ou
-2. Dashboard VPS → Configurações → Senha IPM, e/ou
-3. Arquivo `/opt/rosafiscal/secrets/ipm_senha` (watcher cron aplica)
+Há senha gravada na VPS, mas o webservice responde **HTTP 401 Acesso Negado**.
+Precisa da **senha atual** do portal https://nfse-santarosa.atende.net/ (login CNPJ `56169351000185`):
+1. Recuperar senha no portal (Turnstile/e-mail), depois
+2. Dashboard VPS → Configurações → Senha IPM, e/ou secret Cursor `IPM_SENHA`, e/ou `/opt/rosafiscal/secrets/ipm_senha`
+
+`cutover_ready` só fica true com **auth IPM OK** (não basta a chave existir).
 
 Credenciais root/admin rotacionadas (não versionadas):
 ```bash
