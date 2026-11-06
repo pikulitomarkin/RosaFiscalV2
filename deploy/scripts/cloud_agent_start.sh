@@ -2,8 +2,13 @@
 # Sobe o dashboard Streamlit em cada boot do Cloud Agent.
 # Usa SQLite local por padrao (sem Docker). Credenciais via secrets do ambiente.
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$ROOT"
+
+if [[ -d /agent/repos/RosaFiscalV2 ]]; then
+  cd /agent/repos/RosaFiscalV2
+else
+  cd "$(cd "$(dirname "$0")/../.." && pwd)"
+fi
+
 export PATH="/usr/local/bin:$HOME/.local/bin:$PATH"
 
 mkdir -p certificados data logs

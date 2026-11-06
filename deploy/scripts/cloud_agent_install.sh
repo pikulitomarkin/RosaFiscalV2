@@ -2,7 +2,13 @@
 # Bootstrap idempotente para Cloud Agents (Cursor).
 # Instala deps Python no --user e expoe CLIs em /usr/local/bin (PATH de login).
 set -euo pipefail
-cd "$(cd "$(dirname "$0")/../.." && pwd)"
+
+# Draft builds checkout em /agent/repos/<repo>; agents locais usam o path do script.
+if [[ -d /agent/repos/RosaFiscalV2 ]]; then
+  cd /agent/repos/RosaFiscalV2
+else
+  cd "$(cd "$(dirname "$0")/../.." && pwd)"
+fi
 
 python3 -m pip install --user --upgrade pip
 python3 -m pip install --user -r requirements.txt
