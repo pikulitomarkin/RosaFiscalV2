@@ -71,14 +71,17 @@ json_out=$(cat <<EOF
 EOF
 )
 printf '%s\n' "$json_out"
-# Persist for cron/UI (host + volume appdata quando possível)
-printf '%s\n' "$json_out" > "$ROOT/CUTOVER_STATUS.json" || true
+# Persist atomically (cron redirect + leitores paralelos não veem arquivo vazio)
+tmp="${ROOT}/CUTOVER_STATUS.json.tmp.$$"
+printf '%s\n' "$json_out" > "$tmp"
+mv -f "$tmp" "$ROOT/CUTOVER_STATUS.json"
 if docker compose cp "$ROOT/CUTOVER_STATUS.json" app:/app/data/CUTOVER_STATUS.json >/dev/null 2>&1; then
   :
 else
   # fallback: volume mount path on host
   vol="$(docker volume inspect rosafiscal_appdata -f '{{.Mountpoint}}' 2>/dev/null || true)"
   if [[ -n "$vol" && -d "$vol" ]]; then
-    cp -f "$ROOT/CUTOVER_STATUS.json" "$vol/CUTOVER_STATUS.json" || true
+    cp -f "$ROOT/CUTOVER_STATUS.json" "$vol/CUTOVER_STATUS.json.tmp"
+    mv -f "$vol/CUTOVER_STATUS.json.tmp" "$vol/CUTOVER_STATUS.json" || true
   fi
 fi
