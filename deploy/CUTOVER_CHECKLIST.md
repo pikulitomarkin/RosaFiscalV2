@@ -21,7 +21,8 @@ Atualizado com evidência na VPS `184.107.179.79`.
 | Cert A1 | opcional no fluxo IPM | WARN |
 | Trocar senha root | rotacionada; ver `/root/rosafiscal_rotated_credentials.txt` | **OK** (ops: copiar p/ cofre) |
 | Trocar senha admin dashboard | rotacionada no Postgres + `.env` | **OK** (ops: copiar p/ cofre) |
-| Código VPS = tip da branch | `3bf6d68` migracao-vps | OK |
+| Código VPS = tip da branch | sync `cursor/migracao-vps-ddd1` | OK |
+| Restore dry-run do backup | `test_backup_restore.sh` (DB temp) | PENDENTE (rodar na VPS) |
 | Desligar Railway | só após emissão validada | PENDENTE |
 
 ## Bloqueio atual
@@ -34,6 +35,8 @@ Credenciais root/admin rotacionadas (não versionadas):
 ```bash
 ssh -i KEY root@184.107.179.79 'cat /root/rosafiscal_rotated_credentials.txt'
 ```
+
+Modelo e-mail contabilidade: `deploy/SOLICITAR_SENHA_IPM.md`
 
 Validar depois:
 ```bash
