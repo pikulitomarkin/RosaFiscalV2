@@ -560,59 +560,6 @@ def login_page():
     st.markdown("### Portal de Automação de Notas Fiscais")
     st.caption("Nathalia Gabriela · Santa Rosa-RS · VPS produção")
 
-    # Cutover: deixa o bloqueio IPM visível antes mesmo do login
-    try:
-        import json
-        from pathlib import Path
-        from src.utils.runtime_config import ipm_senha_configurada as _login_ipm_ok
-
-        _status = {}
-        for _p in (Path("data/CUTOVER_STATUS.json"), Path("/opt/rosafiscal/CUTOVER_STATUS.json")):
-            if _p.exists():
-                try:
-                    _status = json.loads(_p.read_text(encoding="utf-8"))
-                    break
-                except Exception:
-                    pass
-
-        _senha_ok = bool(_login_ipm_ok())
-        _auth_ok = bool(_status.get("ipm_auth")) if _status else False
-        if not _senha_ok:
-            st.warning(
-                "Cutover VPS **7/8**: falta a **Senha IPM** (portal NFS-e Santa Rosa, "
-                "CNPJ `56169351000185`). Após entrar, abra **Configurações** e salve. "
-                "A senha do dashboard `admin` **não** é a senha IPM."
-            )
-            _ipm_row = "**PENDENTE**"
-        elif not _auth_ok:
-            st.error(
-                "Cutover VPS: **Senha IPM rejeitada** pelo Atende.Net (HTTP 401). "
-                "Recupere a senha atual do portal (CNPJ `56169351000185`) e salve de novo em "
-                "**Configurações**. Não desligue o Railway ainda."
-            )
-            _ipm_row = "**AUTH 401**"
-        else:
-            _ipm_row = None
-
-        if _ipm_row:
-            with st.expander("Status da migração (ao vivo)", expanded=False):
-                st.markdown(
-                    f"""
-| Check | Estado |
-| --- | --- |
-| App / HTTPS | OK |
-| Banco + histórico | OK |
-| Rede Atende.Net | OK |
-| **Senha / auth IPM** | {_ipm_row} |
-
-Portal: [nfse-santarosa.atende.net](https://nfse-santarosa.atende.net/) ·  
-Recuperar senha: [link direto](https://nfse-santarosa.atende.net/autoatendimento/servicos/recuperacao-de-senha-de-acesso/detalhar/1) ·  
-Modelo p/ contabilidade: `deploy/SOLICITAR_SENHA_IPM.md`
-                    """
-                )
-    except Exception:
-        pass
-
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
@@ -633,10 +580,6 @@ Modelo p/ contabilidade: `deploy/SOLICITAR_SENHA_IPM.md`
                     st.rerun()
                 else:
                     st.error("❌ Usuário ou senha inválidos")
-                    st.caption(
-                        "Se a senha admin foi rotacionada na migração, recupere via SSH: "
-                        "`cat /root/rosafiscal_rotated_credentials.txt`"
-                    )
 
 
 def logout():
