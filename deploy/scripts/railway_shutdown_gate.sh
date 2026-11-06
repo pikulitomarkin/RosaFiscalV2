@@ -24,9 +24,9 @@ PY
 
 if [[ "$READY" != "true" ]]; then
   echo
-  echo "GATE FECHADO: cutover_ready=false (blocker típico: IPM_SENHA)."
+  echo "GATE FECHADO: cutover_ready=false (blocker típico: IPM_SENHA / IPM_AUTH)."
   echo "Não desligue o Railway ainda."
-  echo "Após salvar a senha IPM: bash deploy/scripts/post_cutover_check.sh"
+  echo "Após senha IPM válida (auth OK): bash deploy/scripts/post_cutover_check.sh"
   exit 2
 fi
 
