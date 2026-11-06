@@ -19,14 +19,17 @@ Estamos finalizando a migração do sistema de emissão de NFS-e para o novo ser
 Para autenticar no webservice da prefeitura (IPM/Atende.Net) precisamos da
 mesma senha de login do contribuinte no portal:
 
-  https://nfse-santarosa.atende.net/
+  https://nfse-santarosa.atende.net/autoatendimento/servicos/nfse
   CNPJ: 56169351000185
+
+Recuperar senha (link direto):
+  https://nfse-santarosa.atende.net/autoatendimento/servicos/recuperacao-de-senha-de-acesso/detalhar/1
 
 Não é a senha do dashboard Streamlit (usuário admin).
 
 Se possível:
 1) confirmem a senha atual, ou
-2) usem "Recuperar Senha" no portal e nos enviem a nova por canal seguro.
+2) usem o link de Recuperar Senha acima e nos enviem a nova por canal seguro.
 
 Obrigado.
 ```
