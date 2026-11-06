@@ -23,7 +23,7 @@ Atualizado com evidência na VPS `184.107.179.79`.
 | Cert A1 | opcional no fluxo IPM | WARN |
 | Trocar senha root | rotacionada; ver `/root/rosafiscal_rotated_credentials.txt` | **OK** (ops: copiar p/ cofre) |
 | Trocar senha admin dashboard | rotacionada no Postgres + `.env` | **OK** (ops: copiar p/ cofre) |
-| Código VPS = tip da branch | sync `cursor/migracao-vps-ddd1` | OK |
+| Código VPS = tip da branch | sync `cursor/migracao-vps-ddd1` @ `bbd1273` | OK |
 | Restore dry-run do backup | `20261105_203203` → 3662/3 = prod | **OK** |
 | Desligar Railway | só após emissão validada | PENDENTE |
 
