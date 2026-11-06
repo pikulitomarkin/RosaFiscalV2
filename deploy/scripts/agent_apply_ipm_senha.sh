@@ -1,14 +1,28 @@
 #!/usr/bin/env bash
-# Roda no Cloud Agent (não na VPS): se IPM_SENHA estiver no ambiente,
-# envia via SSH para set_ipm_senha.sh --stdin sem imprimir o valor.
+# Roda no Cloud Agent (não na VPS): aplica IPM_SENHA na VPS sem imprimir o valor.
+#
+# Fontes (primeira que existir ganha):
+#   1) env IPM_SENHA (Cursor Secrets)
+#   2) arquivo local secrets/ipm_senha (gitignored)
 #
 # Uso:
-#   export IPM_SENHA=...   # via Cursor Secrets (nunca no chat)
 #   ./deploy/scripts/agent_apply_ipm_senha.sh
 set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$ROOT"
+umask 077
 
-if [[ -z "${IPM_SENHA:-}" ]]; then
-  echo "IPM_SENHA ausente no ambiente do agent — nada a aplicar."
+SENHA="${IPM_SENHA:-}"
+FILE=""
+for c in "$ROOT/secrets/ipm_senha" "$ROOT/secrets/IPM_SENHA" "$ROOT/secrets/ipm_senha.txt"; do
+  if [[ -z "$SENHA" && -f "$c" ]]; then
+    SENHA="$(tr -d '\r\n' < "$c")"
+    FILE="$c"
+  fi
+done
+
+if [[ -z "${SENHA}" ]]; then
+  echo "IPM_SENHA ausente (env e secrets/ipm_senha) — nada a aplicar."
   exit 2
 fi
 
@@ -20,11 +34,16 @@ if [[ ! -f "$KEY" ]]; then
   exit 1
 fi
 
-# Pipe senha sem eco; remoto aplica .env + runtime_config + recreate app
-printf '%s' "$IPM_SENHA" | ssh -i "$KEY" -o StrictHostKeyChecking=accept-new \
+printf '%s' "$SENHA" | ssh -i "$KEY" -o StrictHostKeyChecking=accept-new \
   -o ConnectTimeout=20 "$HOST" \
   'bash /opt/rosafiscal/deploy/scripts/set_ipm_senha.sh --stdin'
 
+unset SENHA
+if [[ -n "$FILE" ]]; then
+  shred -u "$FILE" 2>/dev/null || rm -f "$FILE"
+  echo "Arquivo local de senha removido após aplicar."
+fi
+
 echo "Aplicado na VPS. Rodando post_cutover_check..."
-ssh -i "$KEY" -o ConnectTimeout=20 "$HOST" \
+ssh -i "$KEY" -o ConnectTimeout=30 "$HOST" \
   'bash /opt/rosafiscal/deploy/scripts/post_cutover_check.sh'
