@@ -55,7 +55,14 @@ else
     echo "OK   data/certs presente (certs por usuário)"
     ok=$((ok+1))
   else
-    echo "WARN data/certs ainda vazio — cada usuário deve enviar PFX em Configurações"
+    echo "WARN data/certs ausente — rode seed / reinicie app"
+  fi
+  if docker compose exec -T app python deploy/scripts/check_sefin_certs.py >/tmp/sefin_certs.out 2>&1; then
+    echo "OK   certificado A1 de pelo menos 1 usuário"
+    ok=$((ok+1))
+  else
+    echo "WARN nenhum A1 em /app/data/certs/{user}/ — emission_ready=false"
+    tail -5 /tmp/sefin_certs.out 2>/dev/null || true
   fi
   check "Sefin host alcançável" bash -c 'code=$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 8 --max-time 15 https://sefin.nfse.gov.br/ || echo 000); [[ "$code" != "000" ]]'
 fi
