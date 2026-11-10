@@ -30,53 +30,75 @@ REGEX_ID_DPS = re.compile(r"DPS\d{44}")
 class NFSeService:
     """Serviço de alto nível para operações de NFS-e no ADN."""
     
-    def __init__(self, prestador_config: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        prestador_config: Optional[Dict[str, Any]] = None,
+        cert_path: Optional[str] = None,
+        key_path: Optional[str] = None,
+    ):
         """
         Inicializa o serviço de NFS-e.
         
         Args:
             prestador_config: Configuração do prestador (emissor)
+            cert_path: PEM do certificado A1 (por usuário)
+            key_path: PEM da chave privada (por usuário)
         """
         # Caminhos dos certificados para assinatura XML e mTLS
-        cert_path = settings.CERTIFICATE_PATH.replace('.pfx', '_cert.pem') if hasattr(settings, 'CERTIFICATE_PATH') else 'certificados/cert.pem'
-        key_path = settings.CERTIFICATE_PATH.replace('.pfx', '_key.pem') if hasattr(settings, 'CERTIFICATE_PATH') else 'certificados/key.pem'
-        
+        if cert_path and key_path:
+            resolved_cert, resolved_key = cert_path, key_path
+        else:
+            base = getattr(settings, "CERTIFICATE_PATH", "certificados/certificado.pfx")
+            resolved_cert = base.replace(".pfx", "_cert.pem") if base.endswith(".pfx") else "certificados/cert.pem"
+            resolved_key = base.replace(".pfx", "_key.pem") if base.endswith(".pfx") else "certificados/key.pem"
+
+        self._cert_path = resolved_cert
+        self._key_path = resolved_key
+
         # Inicializa cliente API com mTLS
-        self.client = NFSeAPIClient(cert_path=cert_path, key_path=key_path)
+        self.client = NFSeAPIClient(cert_path=resolved_cert, key_path=resolved_key)
         
         # Inicializa gerador de XML com assinatura
         ambiente = TipoAmbiente(settings.NFSE_API_AMBIENTE)
         self.xml_generator = NFSeXMLGenerator(
             ambiente=ambiente,
-            cert_path=cert_path,
-            key_path=key_path
+            cert_path=resolved_cert,
+            key_path=resolved_key
         )
         
         # Configuração do prestador
         self.prestador_config = prestador_config or self._load_default_prestador()
-        
-        app_logger.info(f"Serviço NFS-e inicializado - Ambiente: {ambiente.value}")
+        cnpj = self.prestador_config.get("cnpj", "?")
+        app_logger.info(f"Serviço NFS-e inicializado - Ambiente: {ambiente.value} CNPJ={cnpj}")
     
     def _load_default_prestador(self) -> Dict[str, Any]:
         """
-        Carrega configuração padrão do prestador.
-        Em produção, isso viria de um banco de dados ou arquivo de configuração.
+        Carrega configuração padrão do prestador (compartilhada: cidade/endereço).
+        CNPJ/IM/razão vêm do perfil do usuário quando multiusuário.
         """
-        return {
-            "cnpj": "56169351000185",
-            "inscricao_municipal": "56937",
-            "razao_social": "NATHALIA GABRIELA SERVICOS DE SAUDE LTDA",
-            "nome_fantasia": "NATHALIA GABRIELA",
-            "logradouro": "RUA TARQUINIO DE OLIVEIRA",
-            "numero": "249",
-            "complemento": "",
-            "bairro": "CRUZEIRO",
-            "municipio": "SANTA ROSA",
-            "uf": "RS",
-            "cep": "98789104",
-            "email": "cadastro@dominiocontabil.com.br",
-            "telefone": "4836327480"
-        }
+        try:
+            from src.users.profile import SHARED_PRESTADOR_BASE
+            from src.utils.runtime_config import PRESTADOR_OFICIAL
+            base = dict(SHARED_PRESTADOR_BASE)
+            base.update(PRESTADOR_OFICIAL)
+            return base
+        except Exception:
+            return {
+                "cnpj": "56169351000185",
+                "inscricao_municipal": "56937",
+                "razao_social": "NATHALIA GABRIELA SERVICOS DE SAUDE LTDA",
+                "nome_fantasia": "NATHALIA GABRIELA",
+                "logradouro": "RUA TARQUINIO DE OLIVEIRA",
+                "numero": "249",
+                "complemento": "",
+                "bairro": "CRUZEIRO",
+                "municipio": "SANTA ROSA",
+                "uf": "RS",
+                "cep": "98789104",
+                "email": "cadastro@dominiocontabil.com.br",
+                "telefone": "4836327480",
+                "codigo_municipio": "4318002",
+            }
     
     def _extrair_id_dps_do_erro(self, response_body: Any) -> Optional[str]:
         """Extrai idDPS do corpo de resposta de erro (E0014)."""
@@ -541,15 +563,21 @@ class NFSeService:
             return False
 
 
-# Instância global (lazy initialization no Streamlit)
+# Instância global (lazy initialization no Streamlit) — só sem username
 _nfse_service: Optional[NFSeService] = None
 
 
-def get_nfse_service() -> NFSeService:
-    """Retorna instância singleton do serviço NFS-e."""
+def get_nfse_service(username: Optional[str] = None) -> NFSeService:
+    """
+    Retorna serviço NFS-e.
+    Com username: usa CNPJ + certificado A1 daquele usuário (API nacional).
+    Sem username: singleton legado (certificados/ + prestador padrão).
+    """
+    if username:
+        from src.users.profile import get_nfse_service_for_username
+        return get_nfse_service_for_username(username)
+
     global _nfse_service
-    
     if _nfse_service is None:
         _nfse_service = NFSeService()
-    
     return _nfse_service

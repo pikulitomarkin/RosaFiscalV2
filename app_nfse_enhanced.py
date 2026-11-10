@@ -558,14 +558,14 @@ def login_page():
     """Renderiza página de login."""
     st.title("🔐 Sistema de Emissão NFS-e")
     st.markdown("### Portal de Automação de Notas Fiscais")
-    st.caption("Nathalia Gabriela · Santa Rosa-RS · VPS produção")
+    st.caption("API Nacional (Sefin) · Santa Rosa-RS · multiusuário")
 
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
         with st.form("login_form"):
             st.markdown("#### Credenciais de Acesso")
-            username = st.text_input("Usuário", placeholder="Digite seu usuário")
+            username = st.text_input("Usuário", placeholder="nathalia ou empresa2")
             password = st.text_input("Senha", type="password", placeholder="Digite sua senha")
             submit = st.form_submit_button("🚀 Entrar", use_container_width=True)
 
@@ -576,6 +576,11 @@ def login_page():
                     st.session_state.token = "authenticated"
                     st.session_state.page = 'dashboard'
                     st.session_state.emitted_nfse = load_emitted_nfse()
+                    try:
+                        from src.users.profile import ensure_user_columns
+                        ensure_user_columns()
+                    except Exception:
+                        pass
                     st.success("✅ Login realizado com sucesso!")
                     st.rerun()
                 else:
@@ -601,10 +606,18 @@ def render_dashboard():
     """Renderiza dashboard principal."""
     st.sidebar.title("⚙️ Menu Principal")
     st.sidebar.markdown(f"👤 **Usuário:** {st.session_state.username}")
+    try:
+        from src.users.profile import cert_pronto, get_user_profile
+        _prof = get_user_profile(st.session_state.username or "")
+        if _prof and _prof.cnpj:
+            st.sidebar.caption(f"CNPJ {_prof.cnpj}")
+        if _prof and not cert_pronto(_prof):
+            st.sidebar.warning("Certificado A1 pendente")
+    except Exception:
+        pass
     st.sidebar.markdown("---")
-    
-    # Se a senha IPM falta, abre Configurações na 1ª visita da sessão
-    from src.utils.runtime_config import ipm_senha_configurada as _ipm_ok
+
+    # Sem certificado A1 → abre Configurações na 1ª visita
     menu_opts = [
         "📊 Dashboard",
         "📤 Emissão Individual",
@@ -612,9 +625,14 @@ def render_dashboard():
         "📜 NFS-e Emitidas",
         "⚙️ Configurações",
     ]
-    if not _ipm_ok() and not st.session_state.get("_ipm_prompt_shown"):
-        st.session_state.menu_navigation = "⚙️ Configurações"
-        st.session_state._ipm_prompt_shown = True
+    try:
+        from src.users.profile import cert_pronto, get_user_profile
+        _p = get_user_profile(st.session_state.username or "")
+        if _p and not cert_pronto(_p) and not st.session_state.get("_cert_prompt_shown"):
+            st.session_state.menu_navigation = "⚙️ Configurações"
+            st.session_state._cert_prompt_shown = True
+    except Exception:
+        pass
 
     menu = st.sidebar.radio(
         "Navegação",
@@ -640,14 +658,18 @@ def render_dashboard():
 
 def render_overview():
     """Renderiza página de overview."""
-    from src.utils.runtime_config import ipm_senha_configurada, PRESTADOR_OFICIAL
+    from src.users.profile import cert_pronto, get_user_profile
+    from src.utils.runtime_config import PRESTADOR_OFICIAL, get_emission_backend
 
     st.title("📊 Dashboard - Visão Geral")
-    st.caption(f"Emissor: {PRESTADOR_OFICIAL['razao_social']} · CNPJ {PRESTADOR_OFICIAL['cnpj']}")
-    if not ipm_senha_configurada():
+    profile = get_user_profile(st.session_state.username or "")
+    razao = (profile.razao_social if profile and profile.razao_social else PRESTADOR_OFICIAL["razao_social"])
+    cnpj = (profile.cnpj if profile and profile.cnpj else PRESTADOR_OFICIAL["cnpj"])
+    st.caption(f"Emissor: {razao} · CNPJ {cnpj} · backend={get_emission_backend()}")
+    if not profile or not cert_pronto(profile):
         st.warning(
-            "Senha IPM ainda não configurada. Vá em **⚙️ Configurações**, "
-            "informe a senha do Atende.Net e salve para poder emitir NFS-e."
+            "Certificado A1 ou CNPJ ainda não configurados. Vá em **⚙️ Configurações**, "
+            "informe o CNPJ e envie o PFX com a senha do certificado."
         )
 
     # Métricas
@@ -664,7 +686,7 @@ def render_overview():
         st.metric("Sistema", "✅ Operacional")
     
     with col4:
-        st.metric("IPM", "✅ OK" if ipm_senha_configurada() else "⚠️ Senha")
+        st.metric("Cert A1", "✅ OK" if profile and cert_pronto(profile) else "⚠️ Pendente")
     
     st.markdown("---")
     
@@ -821,91 +843,97 @@ def render_single_emission():
     
     # Processar submissão FORA do form
     if submitted:
-        from src.utils.runtime_config import ipm_senha_configurada as _ipm_ready
+        from src.users.profile import cert_pronto, get_user_profile
         # Validação básica
         if not tomador_cpf or not tomador_nome or not valor_servico:
             st.error("❌ Preencha todos os campos obrigatórios (*)")
-        elif not _ipm_ready():
-            st.error(
-                "❌ Senha IPM não configurada. Vá em **⚙️ Configurações**, "
-                "salve a senha do Atende.Net e tente novamente."
-            )
         else:
-            cpf_limpo = tomador_cpf.replace('.', '').replace('-', '').replace('/', '')
+            profile = get_user_profile(st.session_state.username or "")
+            if not profile or not cert_pronto(profile):
+                st.error(
+                    "❌ Certificado A1 / CNPJ não configurados. Vá em **⚙️ Configurações**, "
+                    "envie o PFX com a senha do certificado e salve o CNPJ."
+                )
+            else:
+                cpf_limpo = tomador_cpf.replace('.', '').replace('-', '').replace('/', '')
 
-            registro_ipm = {
-                "cpf": cpf_limpo,
-                "nome": tomador_nome,
-                "hash": hash_paciente or "",
-                "bairro": tomador_bairro or "NAO INFORMADO",
-                "cep": (tomador_cep or "").replace("-", "") or "00000000",
-                "logradouro": tomador_logradouro or "NAO INFORMADO",
-            }
-            config_ipm = {
-                "valor": valor_servico,
-                "aliquota_iss": aliquota_iss,
-                "item_lista": item_lista.replace(".", ""),
-                "descricao": hash_paciente if hash_paciente and hash_paciente.strip() else descricao_servico,
-            }
+                registro = {
+                    "cpf": cpf_limpo,
+                    "nome": tomador_nome,
+                    "hash": hash_paciente or "",
+                    "bairro": tomador_bairro or "NAO INFORMADO",
+                    "cep": (tomador_cep or "").replace("-", "") or "00000000",
+                    "logradouro": tomador_logradouro or "NAO INFORMADO",
+                }
+                config_servico = {
+                    "valor": valor_servico,
+                    "aliquota_iss": aliquota_iss,
+                    "item_lista": item_lista.replace(".", ""),
+                    "descricao": hash_paciente if hash_paciente and hash_paciente.strip() else descricao_servico,
+                    "simples_nacional": simples_nacional,
+                }
 
-            with st.spinner("⏳ Emitindo NFS-e via IPM/Atende.Net... Por favor aguarde..."):
-                try:
-                    ipm_results = asyncio.run(
-                        get_nfse_service().emitir_nfse_lote_ipm([registro_ipm], config_ipm)
-                    )
-                    ipm_r = ipm_results[0]
-                    sucesso = ipm_r.status == "sucesso"
+                with st.spinner("⏳ Emitindo NFS-e via API Nacional (Sefin)... Por favor aguarde..."):
+                    try:
+                        results = asyncio.run(
+                            get_nfse_service(st.session_state.username).emitir_nfse_lote(
+                                [registro], config_servico
+                            )
+                        )
+                        r = results[0]
+                        sucesso = r.status == "sucesso"
 
-                    if sucesso:
-                        st.success("✅ NFS-e emitida com sucesso!")
+                        if sucesso:
+                            st.success("✅ NFS-e emitida com sucesso!")
 
-                        nfse_data = {
-                            'chave_acesso': ipm_r.protocolo or ipm_r.numero_nfse or 'N/A',
-                            'numero': ipm_r.numero_nfse or 'N/A',
-                            'data_emissao': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                            'tomador_nome': tomador_nome,
-                            'tomador_cpf': tomador_cpf,
-                            'tomador_bairro': tomador_bairro or 'NI',
-                            'tomador_cep': tomador_cep or 'NI',
-                            'tomador_logradouro': tomador_logradouro or 'NI',
-                            'valor': valor_servico,
-                            'iss': valor_servico * (aliquota_iss / 100),
-                            'aliquota_iss': aliquota_iss,
-                            'descricao': hash_paciente if hash_paciente and hash_paciente.strip() else descricao_servico,
-                            'codigo_servico': item_lista.replace(".", ""),
-                            'xml_path': None,
-                            'pdf_path': None,
-                            'link_nfse': ipm_r.link_nfse,
-                        }
+                            nfse_data = {
+                                'chave_acesso': r.numero_nfse or r.protocolo or 'N/A',
+                                'numero': r.numero_nfse or 'N/A',
+                                'data_emissao': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                                'tomador_nome': tomador_nome,
+                                'tomador_cpf': tomador_cpf,
+                                'tomador_bairro': tomador_bairro or 'NI',
+                                'tomador_cep': tomador_cep or 'NI',
+                                'tomador_logradouro': tomador_logradouro or 'NI',
+                                'valor': valor_servico,
+                                'iss': valor_servico * (aliquota_iss / 100),
+                                'aliquota_iss': aliquota_iss,
+                                'descricao': hash_paciente if hash_paciente and hash_paciente.strip() else descricao_servico,
+                                'codigo_servico': item_lista.replace(".", ""),
+                                'xml_path': None,
+                                'pdf_path': None,
+                                'link_nfse': r.link_nfse,
+                                'usuario': st.session_state.username,
+                            }
 
-                        st.session_state.emitted_nfse.append(nfse_data)
-                        st.session_state.last_emission = nfse_data
-                        save_emitted_nfse()
+                            st.session_state.emitted_nfse.append(nfse_data)
+                            st.session_state.last_emission = nfse_data
+                            save_emitted_nfse()
 
-                        st.markdown("---")
-                        st.markdown("### ✅ NFS-e Emitida com Sucesso!")
+                            st.markdown("---")
+                            st.markdown("### ✅ NFS-e Emitida com Sucesso!")
 
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Número", ipm_r.numero_nfse or 'N/A')
-                        with col2:
-                            st.metric("Valor", f"R$ {valor_servico:,.2f}")
-                        with col3:
-                            st.metric("ISS", f"R$ {valor_servico * (aliquota_iss / 100):,.2f}")
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Número/Chave", (r.numero_nfse or 'N/A')[:24])
+                            with col2:
+                                st.metric("Valor", f"R$ {valor_servico:,.2f}")
+                            with col3:
+                                st.metric("ISS", f"R$ {valor_servico * (aliquota_iss / 100):,.2f}")
 
-                        st.markdown("**🔑 Chave/Verificador:**")
-                        st.code(ipm_r.protocolo or ipm_r.numero_nfse or 'N/A', language=None)
+                            st.markdown("**🔑 Chave de acesso:**")
+                            st.code(r.numero_nfse or r.protocolo or 'N/A', language=None)
 
-                        if ipm_r.link_nfse:
-                            st.markdown("**📄 PDF da NFS-e (Prefeitura):**")
-                            st.link_button("Baixar PDF da NFS-e", ipm_r.link_nfse)
+                            if r.link_nfse:
+                                st.markdown("**📄 PDF da NFS-e:**")
+                                st.link_button("Baixar PDF da NFS-e", r.link_nfse)
 
-                    else:
-                        st.error(f"❌ Erro ao emitir NFS-e: {ipm_r.mensagem or 'Erro desconhecido'}")
+                        else:
+                            st.error(f"❌ Erro ao emitir NFS-e: {r.mensagem or 'Erro desconhecido'}")
 
-                except Exception as e:
-                    st.error(f"❌ Erro ao emitir NFS-e: {str(e)}")
-                    app_logger.error(f"Erro na emissão individual IPM: {e}", exc_info=True)
+                    except Exception as e:
+                        st.error(f"❌ Erro ao emitir NFS-e: {str(e)}")
+                        app_logger.error(f"Erro na emissão individual Sefin: {e}", exc_info=True)
 
 
 # ============================================================================
@@ -921,12 +949,14 @@ def _processar_emissao_lote(
     discriminacao,
 ):
     """Processa emissão em lote FORA do st.form para não interromper o Streamlit."""
-    from src.utils.runtime_config import ipm_senha_configurada
+    from src.users.profile import cert_pronto, get_user_profile
 
-    if not ipm_senha_configurada():
+    username = st.session_state.username or ""
+    profile = get_user_profile(username)
+    if not profile or not cert_pronto(profile):
         st.error(
-            "❌ Senha IPM não configurada. Vá em **⚙️ Configurações**, "
-            "salve a senha do Atende.Net e tente o lote novamente."
+            "❌ Certificado A1 / CNPJ não configurados. Vá em **⚙️ Configurações**, "
+            "envie o PFX com a senha do certificado e tente o lote novamente."
         )
         return
 
@@ -947,15 +977,15 @@ def _processar_emissao_lote(
 
     DELAY_ENTRE_EMISSOES = 2   # segundos entre cada nota do lote (throttling)
 
-    def _emitir_ipm_registro(registro_dict, config_dict):
-        """Emite uma NFS-e via IPM/Atende.Net e retorna dict compatível com o loop."""
-        ipm_results = asyncio.run(
-            get_nfse_service().emitir_nfse_lote_ipm([registro_dict], config_dict)
+    def _emitir_sefin_registro(registro_dict, config_dict):
+        """Emite uma NFS-e via API Nacional (Sefin) com certificado do usuário."""
+        results = asyncio.run(
+            get_nfse_service(username).emitir_nfse_lote([registro_dict], config_dict)
         )
-        r = ipm_results[0]
+        r = results[0]
         return {
             "sucesso": r.status == "sucesso",
-            "chave_acesso": r.protocolo or r.numero_nfse or "N/A",
+            "chave_acesso": r.numero_nfse or r.protocolo or "N/A",
             "numero": r.numero_nfse or "N/A",
             "xml_path": None,
             "pdf_path": None,
@@ -991,9 +1021,9 @@ def _processar_emissao_lote(
             else:
                 valor_nota = record.get('valor') or 0
                 fonte_valor = "PDF"
-            app_logger.info(f"[{idx+1}] Emitindo via IPM (valor={valor_nota}, fonte={fonte_valor})...")
+            app_logger.info(f"[{idx+1}] Emitindo via Sefin (valor={valor_nota}, fonte={fonte_valor}, user={username})...")
 
-            _reg_ipm = {
+            _reg = {
                 "cpf": cpf_cnpj,
                 "nome": record.get("nome", ""),
                 "hash": hash_paciente,
@@ -1001,13 +1031,14 @@ def _processar_emissao_lote(
                 "cep": (record.get("cep") or "").replace("-", "") or "00000000",
                 "logradouro": record.get("logradouro", "NAO INFORMADO"),
             }
-            _cfg_ipm = {
+            _cfg = {
                 "valor": float(valor_nota),
                 "aliquota_iss": aliquota_iss,
                 "item_lista": (item_lista or "40303").replace(".", ""),
                 "descricao": descricao_com_hash,
+                "simples_nacional": True,
             }
-            resultado = _emitir_ipm_registro(_reg_ipm, _cfg_ipm)
+            resultado = _emitir_sefin_registro(_reg, _cfg)
             app_logger.info(f"[{idx+1}] Emissão concluída: {resultado.get('sucesso', False)}")
 
             # Throttling: 2 segundos entre cada emissão
@@ -1711,185 +1742,158 @@ def show_xml_content(xml_path):
 # ============================================================================
 
 def render_settings():
-    """Renderiza página de configurações."""
+    """Renderiza página de configurações (API nacional — CNPJ + A1 por usuário)."""
+    from src.users.profile import (
+        SHARED_PRESTADOR_BASE,
+        UserProfile,
+        cert_pronto,
+        get_user_profile,
+        save_user_certificate_pfx,
+        save_user_profile,
+    )
     from src.utils.runtime_config import (
-        PRESTADOR_OFICIAL,
-        get_ipm_senha,
-        get_ipm_usuario,
-        ipm_senha_configurada,
-        save_ipm_credentials,
+        get_emission_backend,
+        get_shared_tax_config,
+        save_shared_tax_config,
+        set_emission_backend,
     )
     from src.utils.logger import app_logger
 
     st.title("⚙️ Configurações do Sistema")
+    st.caption("API Nacional NFS-e (Sefin) · certificado A1 + CNPJ por usuário")
     st.markdown("---")
 
-    # IPM primeiro: único bloqueio do cutover; não esconder abaixo do prestador
-    st.markdown("### 🔑 Webservice IPM (Atende.Net)")
-    st.caption(
-        "É a **mesma senha de acesso ao sistema NFS-e** da prefeitura "
-        "(Portal / https://nfse-santarosa.atende.net/), não a senha deste dashboard. "
-        "Salva no volume do servidor (não no Git)."
+    username = st.session_state.username or ""
+    profile = get_user_profile(username) or UserProfile(username=username)
+
+    st.markdown("### 🏥 Prestador deste usuário")
+    st.info(
+        "Município, endereço e imposto são **compartilhados**. "
+        "Só mudam **CNPJ**, inscrição municipal, razão social e **certificado A1**."
     )
-    ipm_user = get_ipm_usuario()
-    senha_ok = ipm_senha_configurada()
-    if senha_ok:
-        st.success("Senha IPM já configurada neste servidor.")
-    else:
-        st.error(
-            "Senha IPM ainda não configurada — emissão bloqueada. "
-            "Use a senha do login CNPJ no portal NFS-e Santa Rosa "
-            "ou peça à contabilidade."
-        )
-        with st.expander("Como obter esta senha", expanded=True):
+
+    with st.form("perfil_fiscal_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            cnpj_in = st.text_input("CNPJ *", value=profile.cnpj or "", placeholder="somente números")
+            im_in = st.text_input("Inscrição municipal", value=profile.inscricao_municipal or "")
+            razao_in = st.text_input("Razão social", value=profile.razao_social or "")
+            fantasia_in = st.text_input("Nome fantasia", value=profile.nome_fantasia or "")
+        with col2:
+            st.markdown(f"**Município:** {SHARED_PRESTADOR_BASE['municipio']} - {SHARED_PRESTADOR_BASE['uf']}")
+            st.markdown(f"**IBGE:** `{SHARED_PRESTADOR_BASE.get('codigo_municipio', '')}`")
             st.markdown(
-                """
-1. Abra o login do município:  
-   [nfse-santarosa.atende.net](https://nfse-santarosa.atende.net/autoatendimento/servicos/nfse)
-2. Use **CPF/CNPJ** `56169351000185` e a **Senha** do contribuinte  
-   (Fiscal Web / NFS-e — **não** a senha `admin` deste dashboard)
-3. Se não lembrar: clique **Recuperar Senha** nesse portal, ou peça à contabilidade
-4. Volte aqui → **Senha IPM** → **Salvar** → **Testar conexão IPM**
-
-Alternativa: variável `IPM_SENHA` no Railway (projeto antigo).
-                """
+                f"**Endereço:** {SHARED_PRESTADOR_BASE['logradouro']}, "
+                f"{SHARED_PRESTADOR_BASE['numero']} — {SHARED_PRESTADOR_BASE['bairro']}"
             )
+            st.markdown(f"**CEP:** {SHARED_PRESTADOR_BASE['cep']}")
+        salvar_perfil = st.form_submit_button("💾 Salvar CNPJ / empresa", type="primary", use_container_width=True)
 
-    with st.form("ipm_credentials_form"):
-        usuario_input = st.text_input(
-            "Usuário IPM (CNPJ)",
-            value=ipm_user or PRESTADOR_OFICIAL["cnpj"],
-            help="Normalmente o CNPJ do prestador, só números.",
-        )
-        senha_input = st.text_input(
-            "Senha IPM",
-            type="password",
-            placeholder="Senha do portal NFS-e (mesmo login do CNPJ)",
-            help="Senha de acesso ao sistema NFS-e Santa Rosa. Em branco = manter a já salva.",
-        )
-        submitted_ipm = st.form_submit_button(
-            "💾 Salvar credenciais IPM",
-            type="primary",
-            use_container_width=True,
-        )
+    if salvar_perfil:
+        try:
+            profile.cnpj = cnpj_in
+            profile.inscricao_municipal = im_in
+            profile.razao_social = razao_in
+            profile.nome_fantasia = fantasia_in
+            save_user_profile(profile)
+            st.success("✅ Perfil fiscal salvo.")
+            st.rerun()
+        except Exception as e:
+            app_logger.exception("Falha ao salvar perfil fiscal")
+            st.error(f"Falha ao salvar: {e}")
 
-    if submitted_ipm:
-        if not senha_input and not senha_ok:
-            st.error("Informe a senha IPM para salvar.")
+    st.markdown("---")
+    st.markdown("### 🔐 Certificado Digital A1 (deste usuário)")
+    if cert_pronto(profile):
+        st.success(f"Certificado PEM pronto em `data/certs/{username}/`")
+    else:
+        st.warning("Envie o arquivo PFX/P12 e a senha do certificado para habilitar a emissão.")
+
+    pfx_file = st.file_uploader("Arquivo PFX / P12", type=["pfx", "p12"], key="pfx_upload")
+    cert_pwd = st.text_input(
+        "Senha do certificado A1",
+        type="password",
+        placeholder="Senha do arquivo PFX (não a senha de login)",
+        key="cert_pwd_input",
+    )
+    if st.button("📤 Converter e salvar certificado", use_container_width=True, key="salvar_cert_btn"):
+        if not pfx_file:
+            st.error("Selecione o arquivo PFX/P12.")
+        elif not cert_pwd:
+            st.error("Informe a senha do certificado.")
         else:
             try:
-                save_ipm_credentials(usuario_input, senha_input)
-                object.__setattr__(settings, "IPM_USUARIO", get_ipm_usuario())
-                if senha_input:
-                    object.__setattr__(settings, "IPM_SENHA", get_ipm_senha())
-                app_logger.info(
-                    f"Credenciais IPM salvas via dashboard "
-                    f"(usuario={get_ipm_usuario()}, senha_len={len(senha_input) if senha_input else 0})"
-                )
-                st.success("✅ Credenciais IPM salvas.")
+                save_user_certificate_pfx(username, pfx_file.getvalue(), cert_pwd)
+                st.success("✅ Certificado A1 convertido e salvo para este usuário.")
                 st.rerun()
             except Exception as e:
-                app_logger.exception("Falha ao salvar credenciais IPM")
-                st.error(f"Falha ao salvar no volume: {e}")
+                app_logger.exception("Falha ao salvar PFX")
+                st.error(f"Falha ao processar certificado: {e}")
 
     st.markdown("---")
-
-    # Prestador oficial (Nathalia) — identidade do emissor, não o subject de PEM de terceiros
-    st.markdown("### 🏥 Prestador (emissor)")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(f"**CNPJ:** {PRESTADOR_OFICIAL['cnpj']}")
-        st.markdown(f"**Razão social:** {PRESTADOR_OFICIAL['razao_social']}")
-        st.markdown(f"**Nome fantasia:** {PRESTADOR_OFICIAL['nome_fantasia']}")
-    with col2:
-        st.markdown(f"**Inscrição municipal:** {PRESTADOR_OFICIAL['inscricao_municipal']}")
-        st.markdown("**Município:** Santa Rosa - RS")
-        st.success("✅ Prestador: Nathalia Gabriela")
-
-    testar = st.button(
-        "🔌 Testar conexão IPM (modo teste — não emite nota)",
-        use_container_width=True,
-        disabled=not ipm_senha_configurada(),
-        help="Salve a senha IPM acima antes de testar.",
-    )
-    if testar and ipm_senha_configurada():
-        with st.spinner("Testando autenticação no Atende.Net..."):
-            try:
-                from src.api.ipm_soap_client import IPMSoapClient
-                from src.utils.rps_xml_generator import RPSXMLGenerator
-                from src.api.nfse_service import NFSeService
-
-                prestador = NFSeService()._load_default_prestador()
-                gen = RPSXMLGenerator(ambiente_teste=True)
-                xml = gen.gerar_enviar_lote_rps_sincrono(
-                    cnpj_prestador=prestador["cnpj"],
-                    inscricao_municipal=prestador["inscricao_municipal"],
-                    numero_lote=1,
-                    numero_rps=1,
-                    serie_rps="A",
-                    cpf_tomador="00000000191",
-                    nome_tomador="TESTE CONEXAO IPM",
-                    descricao="TESTE VALIDACAO CREDENCIAIS",
-                    valor=1.0,
-                    aliquota_iss=2.01,
-                    codigo_servico="40303",
-                    nbs="1.2301.21.00",
-                    bairro_tomador="CENTRO",
-                    cep_tomador="98780000",
-                    logradouro_tomador="RUA TESTE",
-                )
-                result = asyncio.run(IPMSoapClient().enviar_lote_rps_sincrono(xml))
-                if result.get("sucesso"):
-                    st.success("✅ Conexão IPM OK (modo teste). Pode emitir notas.")
-                else:
-                    msgs = result.get("mensagens") or result.get("erros") or result
-                    st.error(f"❌ IPM rejeitou o teste: {msgs}")
-            except Exception as e:
-                st.error(f"❌ Falha ao testar IPM: {e}")
+    st.markdown("### 💰 Imposto / serviço (compartilhado)")
+    tax = get_shared_tax_config()
+    with st.form("shared_tax_form"):
+        t1, t2 = st.columns(2)
+        with t1:
+            aliq = st.number_input("Alíquota ISS (%)", min_value=0.0, max_value=100.0, value=float(tax["aliquota_iss"]), step=0.01)
+            item = st.text_input("Código serviço", value=tax["item_lista"])
+        with t2:
+            desc = st.text_input("Descrição padrão", value=tax["descricao"])
+            nbs = st.text_input("NBS", value=tax["nbs"])
+            sn = st.checkbox("Optante Simples Nacional", value=bool(tax["simples_nacional"]))
+        salvar_tax = st.form_submit_button("💾 Salvar imposto compartilhado", use_container_width=True)
+    if salvar_tax:
+        save_shared_tax_config(
+            aliquota_iss=aliq,
+            item_lista=item,
+            descricao=desc,
+            nbs=nbs,
+            simples_nacional=sn,
+        )
+        st.success("✅ Configuração de imposto salva (vale para todos os usuários).")
+        st.rerun()
 
     st.markdown("---")
-
-    st.markdown("### 🔐 Certificado Digital")
-    try:
-        cert_info = get_certificate_manager().get_certificate_info()
-        cert_cnpj = "".join(ch for ch in str(cert_info.get("subject_cnpj") or "") if ch.isdigit())
-        esperado = PRESTADOR_OFICIAL["cnpj"]
-
-        if cert_cnpj and cert_cnpj != esperado:
-            st.warning(
-                "O arquivo de certificado instalado **não pertence** a "
-                f"{PRESTADOR_OFICIAL['nome_fantasia']} (CNPJ {esperado}). "
-                "Ele **não** é usado como identidade do emissor neste dashboard. "
-                "Substitua `certificados/cert.pem` e `key.pem` pelo A1 da Nathalia quando necessário."
-            )
-        elif cert_cnpj:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown(f"**CNPJ:** {cert_info.get('subject_cnpj', 'N/A')}")
-                st.markdown(f"**Nome:** {cert_info.get('subject_cn', 'N/A')}")
-                st.markdown(f"**Emissor:** {cert_info.get('issuer_cn', 'N/A')}")
-            with col2:
-                st.markdown(f"**Válido até:** {cert_info.get('not_after', 'N/A')}")
-                if cert_info.get("is_valid"):
-                    st.success("✅ Certificado válido")
-                else:
-                    st.error("❌ Certificado inválido ou expirado")
-        else:
-            st.info("Nenhum certificado A1 carregado. A emissão IPM usa usuário/senha acima.")
-    except Exception as e:
-        st.info(f"Certificado A1 não carregado ({e}). A emissão IPM usa usuário/senha acima.")
-
-    st.markdown("---")
-
     st.markdown("### 🌐 Integração")
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("**Canal:** IPM / Atende.Net (Santa Rosa-RS)")
-        st.markdown(f"**URL:** `{settings.IPM_WEBSERVICE_URL}`")
+        st.markdown("**Canal:** API Nacional NFS-e (Sefin)")
+        st.markdown(f"**URL:** `{settings.NFSE_API_BASE_URL}`")
+        st.markdown(f"**Ambiente:** `{settings.NFSE_API_AMBIENTE}`")
     with col2:
-        ambiente = "Teste" if settings.IPM_AMBIENTE_TESTE else "Produção"
-        st.markdown(f"**Ambiente IPM:** {ambiente}")
-        st.markdown(f"**Usuário IPM:** `{get_ipm_usuario()}`")
+        backend = get_emission_backend()
+        st.markdown(f"**Backend ativo:** `{backend}`")
+        st.markdown(f"**Usuário logado:** `{username}`")
+        st.markdown(f"**CNPJ emissor:** `{profile.cnpj or '—'}`")
+
+    novo_backend = st.selectbox(
+        "Backend de emissão",
+        options=["sefin", "ipm"],
+        index=0 if backend == "sefin" else 1,
+        help="Padrão: sefin (API nacional). IPM permanece disponível só como legado.",
+    )
+    if st.button("Aplicar backend", use_container_width=True):
+        set_emission_backend(novo_backend)
+        st.success(f"Backend definido como `{novo_backend}`.")
+        st.rerun()
+
+    testar = st.button(
+        "🔌 Testar API Nacional (health)",
+        use_container_width=True,
+        disabled=not cert_pronto(profile),
+        help="Requer certificado A1 salvo para este usuário.",
+    )
+    if testar and cert_pronto(profile):
+        with st.spinner("Consultando disponibilidade da API Nacional..."):
+            try:
+                ok = asyncio.run(get_nfse_service(username).consultar_status_api())
+                if ok:
+                    st.success("✅ API Nacional respondeu.")
+                else:
+                    st.warning("API Nacional não respondeu como esperado — confira certificado e ambiente.")
+            except Exception as e:
+                st.error(f"❌ Falha no teste: {e}")
 
     st.markdown("---")
 

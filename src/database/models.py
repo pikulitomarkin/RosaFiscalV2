@@ -85,7 +85,7 @@ class LogProcessamento(Base):
 
 
 class Usuario(Base):
-    """Usuários do sistema (para autenticação)."""
+    """Usuários do sistema (login Streamlit + emissor NFS-e nacional)."""
     
     __tablename__ = 'usuarios'
     
@@ -97,6 +97,13 @@ class Usuario(Base):
     # Perfil
     nome_completo = Column(String(150))
     email = Column(String(100), unique=True)
+
+    # Perfil fiscal por usuário (API Sefin nacional — mTLS)
+    cnpj = Column(String(14), nullable=True)
+    inscricao_municipal = Column(String(30), nullable=True)
+    razao_social = Column(String(200), nullable=True)
+    nome_fantasia = Column(String(150), nullable=True)
+    cert_password = Column(String(255), nullable=True)  # senha do A1 (PFX)
     
     # Status
     is_active = Column(Boolean, default=True)
@@ -107,4 +114,4 @@ class Usuario(Base):
     last_login = Column(DateTime)
     
     def __repr__(self):
-        return f"<Usuario(id={self.id}, username={self.username})>"
+        return f"<Usuario(id={self.id}, username={self.username}, cnpj={self.cnpj})>"

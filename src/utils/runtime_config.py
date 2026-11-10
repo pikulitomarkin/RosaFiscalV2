@@ -71,3 +71,48 @@ def save_ipm_credentials(usuario: str, senha: str) -> None:
     os.environ["IPM_USUARIO"] = data["ipm_usuario"]
     if senha:
         os.environ["IPM_SENHA"] = senha
+
+
+def get_emission_backend() -> str:
+    """Backend de emissão: 'sefin' (API nacional, padrão) ou 'ipm' (legado)."""
+    data = _read()
+    raw = str(data.get("emission_backend") or os.getenv("EMISSION_BACKEND") or "sefin").strip().lower()
+    return raw if raw in ("sefin", "ipm") else "sefin"
+
+
+def set_emission_backend(backend: str) -> None:
+    data = _read()
+    data["emission_backend"] = "ipm" if str(backend).lower() == "ipm" else "sefin"
+    _write(data)
+
+
+def get_shared_tax_config() -> Dict[str, Any]:
+    """Imposto / serviço padrão compartilhado entre usuários."""
+    data = _read()
+    shared = data.get("shared_tax") or {}
+    return {
+        "aliquota_iss": float(shared.get("aliquota_iss", 2.01)),
+        "item_lista": str(shared.get("item_lista", "40303")),
+        "descricao": str(shared.get("descricao", "CONSULTA MEDICA")),
+        "nbs": str(shared.get("nbs", "1.2301.21.00")),
+        "simples_nacional": bool(shared.get("simples_nacional", True)),
+    }
+
+
+def save_shared_tax_config(
+    *,
+    aliquota_iss: float,
+    item_lista: str,
+    descricao: str,
+    nbs: str = "1.2301.21.00",
+    simples_nacional: bool = True,
+) -> None:
+    data = _read()
+    data["shared_tax"] = {
+        "aliquota_iss": float(aliquota_iss),
+        "item_lista": "".join(ch for ch in str(item_lista) if ch.isdigit()) or "40303",
+        "descricao": (descricao or "CONSULTA MEDICA").strip(),
+        "nbs": (nbs or "1.2301.21.00").strip(),
+        "simples_nacional": bool(simples_nacional),
+    }
+    _write(data)

@@ -60,13 +60,18 @@ async def init_database():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-        # Amplia colunas em bases já existentes (create_all não altera tamanho)
+        # Amplia / cria colunas em bases já existentes (create_all não altera)
         if settings.DATABASE_URL.startswith("postgresql"):
             alters = [
                 "ALTER TABLE nfse_emissoes ALTER COLUMN hash_transacao TYPE VARCHAR(128)",
                 "ALTER TABLE nfse_emissoes ALTER COLUMN protocolo TYPE VARCHAR(128)",
                 "ALTER TABLE nfse_emissoes ALTER COLUMN cpf_tomador TYPE VARCHAR(14)",
                 "ALTER TABLE nfse_emissoes ALTER COLUMN url_nfse TYPE VARCHAR(1000)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cnpj VARCHAR(14)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS inscricao_municipal VARCHAR(30)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS razao_social VARCHAR(200)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS nome_fantasia VARCHAR(150)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cert_password VARCHAR(255)",
             ]
             for stmt in alters:
                 try:
