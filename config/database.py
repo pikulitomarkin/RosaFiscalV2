@@ -64,6 +64,7 @@ async def init_database():
         if settings.DATABASE_URL.startswith("postgresql"):
             alters = [
                 "ALTER TABLE nfse_emissoes ALTER COLUMN hash_transacao TYPE VARCHAR(128)",
+                "ALTER TABLE nfse_emissoes ALTER COLUMN numero_nfse TYPE VARCHAR(80)",
                 "ALTER TABLE nfse_emissoes ALTER COLUMN protocolo TYPE VARCHAR(128)",
                 "ALTER TABLE nfse_emissoes ALTER COLUMN cpf_tomador TYPE VARCHAR(14)",
                 "ALTER TABLE nfse_emissoes ALTER COLUMN url_nfse TYPE VARCHAR(1000)",
