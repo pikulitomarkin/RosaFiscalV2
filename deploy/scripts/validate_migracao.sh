@@ -48,7 +48,7 @@ PY'
   check "IPM rede Atende.Net" bash -c 'code=$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 8 --max-time 15 -u 0:0 -F "teste=@/etc/hosts;type=text/xml" "https://ws-santarosa.atende.net/?pg=rest&service=WNERestServiceNFSe" || echo 000); [[ "$code" == "401" || "$code" == "403" || "$code" == "200" ]]'
 else
   # Sefin / API nacional: usuários seed + colunas fiscais; cert A1 é por usuário (volume)
-  check "usuarios nathalia+empresa2" bash -c 'c=$(docker compose exec -T db psql -U nfse -d nfse -Atc "select count(*) from usuarios where username in ('\''nathalia'\'','\''empresa2'\'') and is_active"); test "$c" -ge 2'
+  check "usuarios nathalia+guilherme" bash -c 'c=$(docker compose exec -T db psql -U nfse -d nfse -Atc "select count(*) from usuarios where username in ('\''nathalia'\'','\''guilherme'\'') and is_active"); test "$c" -ge 2'
   check "coluna cnpj em usuarios" bash -c 'docker compose exec -T db psql -U nfse -d nfse -Atc "select column_name from information_schema.columns where table_name='\''usuarios'\'' and column_name='\''cnpj'\''" | grep -q cnpj'
   check "coluna logradouro em usuarios" bash -c 'docker compose exec -T db psql -U nfse -d nfse -Atc "select column_name from information_schema.columns where table_name='\''usuarios'\'' and column_name='\''logradouro'\''" | grep -q logradouro'
   if docker compose exec -T app test -d /app/data/certs; then

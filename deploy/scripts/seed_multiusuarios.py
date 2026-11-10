@@ -8,7 +8,7 @@ CNPJ, endereço e certificado mudam por usuário.
 Uso (VPS / container app):
   docker compose exec -T app python deploy/scripts/seed_multiusuarios.py
 
-Senha de login padrão dos dois: medico
+Senha de login padrão dos dois: admin
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ NATHALIA_ADDR = {
 USERS = [
     {
         "username": "nathalia",
-        "password": "medico",
+        "password": "admin",
         "nome_completo": "Nathalia Gabriela",
         "email": "nathalia@localhost",
         "cnpj": "56169351000185",
@@ -45,11 +45,11 @@ USERS = [
         **NATHALIA_ADDR,
     },
     {
-        "username": "empresa2",
-        "password": "medico",
-        "nome_completo": "Empresa 2 (configurar CNPJ, endereço e certificado)",
-        "email": "empresa2@localhost",
-        "cnpj": "",
+        "username": "guilherme",
+        "password": "admin",
+        "nome_completo": "Guilherme",
+        "email": "guilherme@localhost",
+        "cnpj": "",  # preencher em Configurações
         "inscricao_municipal": "",
         "razao_social": "",
         "nome_fantasia": "",
@@ -156,20 +156,17 @@ def main() -> int:
         )
         print(
             f"OK usuário={u['username']} cnpj={u['cnpj'] or '(vazio)'} "
-            f"municipio={u.get('municipio') or '(configurar)'} senha=medico"
+            f"municipio={u.get('municipio') or '(configurar)'} senha=admin"
         )
 
-    pw_admin = bcrypt.hashpw(b"medico", bcrypt.gensalt()).decode()
+    # Desativa placeholders antigos do seed, se existirem
     cur.execute(
-        "UPDATE usuarios SET password_hash = %s, is_active = true WHERE username = 'admin'",
-        (pw_admin,),
+        "UPDATE usuarios SET is_active = false WHERE username IN ('empresa2') AND username NOT IN ('nathalia','guilherme')"
     )
-    if cur.rowcount:
-        print("OK admin senha=medico (legado)")
 
     cur.close()
     conn.close()
-    print("Seed multiusuário concluído.")
+    print("Seed multiusuário concluído (nathalia + guilherme / admin).")
     return 0
 
 

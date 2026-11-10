@@ -6,12 +6,10 @@
 - Por usuário mudam: **CNPJ**, **endereço**, inscrição municipal, razão social e **PFX + senha do certificado**.
 
 ## Usuários seed
-| Usuário    | Senha login | CNPJ              | Certificado                          |
-|------------|-------------|-------------------|--------------------------------------|
-| `nathalia` | `medico`    | `56169351000185`  | enviar PFX em Configurações          |
-| `empresa2` | `medico`    | (preencher na UI) | enviar PFX em Configurações          |
-
-`admin` legado mantém senha `medico` se existir.
+| Usuário     | Senha login | CNPJ              | Certificado                          |
+|-------------|-------------|-------------------|--------------------------------------|
+| `nathalia`  | `admin`     | `56169351000185`  | enviar PFX em Configurações          |
+| `guilherme` | `admin`     | (preencher na UI) | enviar PFX em Configurações          |
 
 ## Seed na VPS
 ```bash

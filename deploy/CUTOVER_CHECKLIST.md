@@ -15,7 +15,7 @@ Atualizado com evidência na VPS `184.107.179.79` e migração para **API Nacion
 | Root/admin rotacionados | `/root/rosafiscal_rotated_credentials.txt` | OK (ops: cofre) |
 | Branch API nacional no Git | `cursor/api-nacional-multiusuario-ddd1` / PR #3 | OK (código) |
 | **Deploy branch na VPS** | git tip = PR #3 + seed | **BLOQUEADO (SSH)** |
-| Seed `nathalia` + `empresa2` | `seed_multiusuarios.py` | PENDENTE (após deploy) |
+| Seed `nathalia` + `guilherme` | `seed_multiusuarios.py` (senha `admin`) | PENDENTE (após deploy) |
 | Cert A1 por usuário (PFX) | `data/certs/{user}/` | PENDENTE (UI) |
 | Endereço/CNPJ por usuário | colunas + Configurações | PENDENTE (deploy) |
 | Emissão Sefin validada | smoke real | PENDENTE |

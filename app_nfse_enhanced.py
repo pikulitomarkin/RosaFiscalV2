@@ -565,7 +565,7 @@ def login_page():
     with col2:
         with st.form("login_form"):
             st.markdown("#### Credenciais de Acesso")
-            username = st.text_input("Usuário", placeholder="nathalia ou empresa2")
+            username = st.text_input("Usuário", placeholder="nathalia ou guilherme")
             password = st.text_input("Senha", type="password", placeholder="Digite sua senha")
             submit = st.form_submit_button("🚀 Entrar", use_container_width=True)
 
