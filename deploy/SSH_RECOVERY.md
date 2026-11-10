@@ -48,6 +48,19 @@ Wiki iContainer: https://wiki.icontainer.run/en/Acessando-terminal-ssh
 - Chave `…20261110` deste agente **antes** de ser adicionada ao `authorized_keys`.
 - Brute-force SSH (fail2ban).
 
+## Fail2ban (importante)
+O Cloud Agent viu a porta 22 alternar entre `Permission denied` e `Connection refused` após tentativas falhas.  
+No Terminal do ICP, além de autorizar a chave, rode:
+
+```bash
+fail2ban-client set sshd unbanip --all 2>/dev/null || fail2ban-client reload sshd
+# ou: bash /opt/rosafiscal/deploy/scripts/icp_recover_ssh.sh
+# (após git pull do branch — se o script ainda não estiver na VPS, cole o conteúdo de deploy/scripts/icp_recover_ssh.sh)
+```
+
+O agente **não** deve continuar tentando senha até a chave estar autorizada.
+
 ## App (sem SSH)
 - https://vps12436.panel.icontainer.site/  (Streamlit)
 - http://184.107.179.79:8501
+- ICP: https://vps12436.panel.icontainer.site:2090/admin
