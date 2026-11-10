@@ -17,7 +17,7 @@ class NFSeEmissao(Base):
     
     # Identificação
     hash_transacao = Column(String(128), unique=True, index=True, nullable=False)
-    numero_nfse = Column(String(20), index=True)
+    numero_nfse = Column(String(80), index=True)  # chave Sefin nacional ~50 chars
     protocolo = Column(String(128), index=True)
     codigo_verificacao = Column(String(20))
     

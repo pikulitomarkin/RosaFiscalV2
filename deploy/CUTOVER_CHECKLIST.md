@@ -5,7 +5,7 @@ Atualizado com evidência na VPS `184.107.179.79` e migração para **API Nacion
 | Requisito | Evidência | Status |
 |-----------|-----------|--------|
 | App Docker no ar | `docker compose ps` app Up | OK |
-| Postgres com dados | 3662 `nfse_emissoes`, usuários Railway | OK |
+| Postgres com dados | 3662+ `nfse_emissoes`, usuários Railway | OK |
 | Histórico JSON | `/app/data/nfse_emitidas.json` | OK |
 | HTTP local | `:8501/_stcore/health` → 200 | OK |
 | HTTPS produção | `https://vps12436.panel.icontainer.site/` → 200 | OK |
@@ -14,52 +14,41 @@ Atualizado com evidência na VPS `184.107.179.79` e migração para **API Nacion
 | Restore dry-run | backup `20261105_203203` | OK |
 | Root/admin rotacionados | `/root/rosafiscal_rotated_credentials.txt` | OK (ops: cofre) |
 | Branch API nacional no Git | `cursor/api-nacional-multiusuario-ddd1` / PR #3 | OK |
-| **Deploy branch na VPS** | tip atual + rebuild app | **OK** |
-| Seed `nathalia` + `guilherme` | senha login `admin`; ambos `is_admin` | **OK** |
-| Cert A1 nathalia | `/app/data/certs/nathalia/{cert,key}.pem` CNPJ `56169351000185` | **OK** |
-| Cert A1 guilherme (Neuroclin) | PFX perdido após swap — reenviar na UI | **BLOQUEIO** |
-| Endereço/CNPJ por usuário | nathalia OK (`4317202`); guilherme preencher | PARCIAL |
-| IBGE Santa Rosa | `4317202` (corrigido; era `4318002`) | **OK** |
-| Regime SN DPS | `opSimpNac=3` ME/EPP + `regApTribSN=1` (enum oficial; 2=MEI) | **OK (código)** |
-| Emissão Sefin validada | smoke real com A1 nathalia | **PENDENTE / ver smoke** |
-| Desligar Railway | só após smoke sucesso + `RAILWAY_TOKEN` | **BLOQUEIO MANUAL** |
+| Deploy branch na VPS | tip com Sefin multiusuário | **OK** |
+| Seed `nathalia` + `guilherme` | senha login `admin` | **OK** |
+| Cert A1 nathalia | `/app/data/certs/nathalia/` CNPJ `56169351000185` | **OK** |
+| Cert A1 guilherme | reenviar PFX na UI (CNPJ auto do subject) | PENDENTE usuário |
+| Endereço/CNPJ nathalia | IBGE `4317202` Santa Rosa | **OK** |
+| **Emissão Sefin validada** | chave `43172022256169351000185000000000000126114512958866` | **OK** |
+| Desligar Railway | pause manual (sem `RAILWAY_TOKEN` neste agent) | **PENDENTE ops** |
 
-## Correção E0160 (2026-11-10)
+## Smoke Sefin (2026-11-10, America/Sao_Paulo)
 
-Sefin oficial: `opSimpNac` **1=Não optante, 2=MEI, 3=ME/EPP**.  
-Código antigo enviava `2` para SN ME/EPP (Nathalia) → Sefin lia como MEI → **E0160**.  
-BrasilAPI confirma CNPJ `56169351000185`: `opcao_pelo_simples=true`, `opcao_pelo_mei=false`, porte MICRO EMPRESA.
+- Usuário: `nathalia`
+- CNPJ: `56169351000185`
+- Regime: `opSimpNac=3` (ME/EPP) + `regApTribSN=1`
+- Município IBGE: `4317202`
+- Hash: `SMOKE-VPS-8d3ca228331f4bc1`
+- Chave NFS-e: `43172022256169351000185000000000000126114512958866`
+- Status: **sucesso**
 
-Configurável em `shared_tax` / UI Configurações: `mei`, `op_simp_nac`, `reg_ap_trib_sn`.
+## Desligar Railway (manual)
 
-## Bloqueio produto / ops
+1. Confirmar URL oficial só na VPS: https://vps12436.panel.icontainer.site/
+2. No painel Railway: **pause/stop** do serviço Streamlit antigo (não apague volume/DB até backup extra).
+3. Remova DNS/custom domain apontando ao Railway, se houver.
+4. Backup extra: `/opt/rosafiscal/deploy/scripts/backup_nfse.sh`
+5. Gate: `bash /opt/rosafiscal/deploy/scripts/railway_shutdown_gate.sh` (`emission_ready=true`)
 
-Santa Rosa responde IPM **00378 — Emissor Nacional**. IPM legado **não emite**.
-
-```bash
-# Smoke (após deploy)
-scp deploy/scripts/smoke_sefin_vps.py root@VPS:/tmp/
-ssh root@VPS 'docker cp /tmp/smoke_sefin_vps.py rosafiscal-app-1:/tmp/ && \
-  docker compose -f /opt/rosafiscal/docker-compose.yml exec -T \
-  -e SMOKE_CPF=96362790049 -e SMOKE_NOME="Francieli da costa colla" \
-  app python /tmp/smoke_sefin_vps.py'
-
-# Gate Railway (precisa emission_ready + smoke)
-bash /opt/rosafiscal/deploy/scripts/railway_shutdown_gate.sh
-```
-
-Sem `RAILWAY_TOKEN` neste ambiente: **pause do Railway é manual no painel**.
-
-`cutover_ready=true` = infra VPS OK.  
-`emission_ready=true` = pelo menos 1 usuário com A1 em `/app/data/certs/{user}/`.
-
-## Status ops (2026-11-10)
-
-- SSH Cloud Agent OK (chave `/home/ubuntu/.ssh/rosafiscal_vps`).
-- Guilherme: reenviar PFX Neuroclin depois (não bloqueia smoke nathalia).
-- Logins: https://vps12436.panel.icontainer.site/
+## Logins
 
 | Usuário | Senha | CNPJ |
 |---------|-------|------|
 | `nathalia` | `admin` | `56169351000185` |
-| `guilherme` | `admin` | (Configurações / PFX pendente) |
+| `guilherme` | `admin` | (enviar PFX em Configurações) |
+
+## Notas técnicas
+
+- Santa Rosa usa **Emissor Nacional** (IPM erro 00378) — não emitir via IPM.
+- Enum oficial `opSimpNac`: `1` não optante, `2` MEI, `3` ME/EPP (inverter gera **E0160**).
+- IBGE Santa Rosa-RS = **4317202** (não `4318002`).
