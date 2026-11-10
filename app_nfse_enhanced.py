@@ -2144,6 +2144,13 @@ def main():
         app_logger.info("Banco de dados inicializado com sucesso")
     except Exception as e:
         app_logger.warning(f"Aviso ao inicializar banco de dados: {e}")
+
+    # Garante logins nathalia/guilherme (senha admin) após migrate de colunas
+    try:
+        from src.users.seed_login import ensure_login_users
+        ensure_login_users()
+    except Exception as e:
+        app_logger.warning(f"Aviso ao garantir usuários de login: {e}")
     
     # Verifica autenticação
     if not st.session_state.authenticated:
