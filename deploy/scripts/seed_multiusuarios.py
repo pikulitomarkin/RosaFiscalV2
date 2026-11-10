@@ -28,7 +28,7 @@ NATHALIA_ADDR = {
     "cep": "98789104",
     "email_contato": "cadastro@dominiocontabil.com.br",
     "telefone": "4836327480",
-    "codigo_municipio": "4318002",
+    "codigo_municipio": "4317202",
 }
 
 USERS = [

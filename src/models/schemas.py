@@ -175,6 +175,8 @@ class PrestadorServico(BaseModel):
     # Contato
     email: Optional[str] = None
     telefone: Optional[str] = None
+    # IBGE do município do prestador (Santa Rosa-RS = 4317202)
+    codigo_municipio: Optional[str] = Field("4317202", max_length=7)
     
     @field_validator('cnpj')
     @classmethod

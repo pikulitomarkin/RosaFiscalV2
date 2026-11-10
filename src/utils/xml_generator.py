@@ -82,6 +82,7 @@ class NFSeXMLGenerator:
         
         # Gerar ID do DPS (formato: DPS + cMunEmissor(7) + tpInscr(1) + nrInscr(14) + serie(5) + nrDPS(15) = 45 chars)
         cnpj_prestador = nfse_request.prestador.cnpj.zfill(14)
+        c_mun = "".join(ch for ch in (nfse_request.prestador.codigo_municipio or "4317202") if ch.isdigit()).zfill(7)[:7]
         serie_dps = "00001"  # 5 dígitos
         
         # Incrementar contador a cada emissão
@@ -89,7 +90,7 @@ class NFSeXMLGenerator:
         numero_dps = str(self._dps_counter).zfill(15)  # 15 dígitos para o ID
         numero_dps_element = str(self._dps_counter)  # Número SEM zeros à esquerda para o elemento nDPS
         
-        id_dps = f"DPS4318002{1 if len(cnpj_prestador) == 11 else 2}{cnpj_prestador}{serie_dps}{numero_dps}"
+        id_dps = f"DPS{c_mun}{1 if len(cnpj_prestador) == 11 else 2}{cnpj_prestador}{serie_dps}{numero_dps}"
         inf_dps.set("Id", id_dps)
         
         # ORDEM CORRETA CONFORME XSD v1.01:
@@ -124,11 +125,15 @@ class NFSeXMLGenerator:
         SubElement(inf_dps, "tpEmit").text = "1"
         
         # 8. cLocEmi - Código IBGE do município emissor
-        SubElement(inf_dps, "cLocEmi").text = "4318002"  # Santa Rosa-RS
+        SubElement(inf_dps, "cLocEmi").text = c_mun
         
         # 9. prest - Dados do Prestador
         prest_elem = SubElement(inf_dps, "prest")
-        self._add_prestador_v101(prest_elem, nfse_request.prestador)
+        self._add_prestador_v101(
+            prest_elem,
+            nfse_request.prestador,
+            optante_simples_nacional=bool(nfse_request.optante_simples_nacional),
+        )
         
         # 10. toma - Dados do Tomador (opcional)
         if nfse_request.tomador:
@@ -137,7 +142,7 @@ class NFSeXMLGenerator:
         
         # 11. serv - Dados do Serviço
         serv_elem = SubElement(inf_dps, "serv")
-        self._add_servico_v101(serv_elem, nfse_request.servico)
+        self._add_servico_v101(serv_elem, nfse_request.servico, c_mun_prestacao=c_mun)
         
         # 12. valores - Valores e tributos
         valores_elem = SubElement(inf_dps, "valores")
@@ -150,35 +155,30 @@ class NFSeXMLGenerator:
         xml_declaracao = '<?xml version="1.0" encoding="UTF-8"?>\n'
         return xml_declaracao + xml_string
     
-    def _add_prestador_v101(self, parent: Element, prestador: PrestadorServico):
+    def _add_prestador_v101(
+        self,
+        parent: Element,
+        prestador: PrestadorServico,
+        *,
+        optante_simples_nacional: bool = True,
+        mei: bool = False,
+    ):
         """Adiciona dados do prestador conforme XSD v1.01."""
         
         # 1. CNPJ
         SubElement(parent, "CNPJ").text = prestador.cnpj
         
-        # 2. IM - Inscrição Municipal
-        # Não informar se o município não possui informações no CNC NFS-e (erro E0120)
-        # if prestador.inscricao_municipal:
-        #     SubElement(parent, "IM").text = prestador.inscricao_municipal
-        
-        # 3. xNome - Razão Social - NÃO ENVIAR quando prestador é o emitente (E0121)
-        # SubElement(parent, "xNome").text = prestador.razao_social
-        
-        # 4. end - Endereço - NÃO ENVIAR quando prestador é o emitente da DPS (E0128)
-        # end_elem = SubElement(parent, "end")
-        # end_nac = SubElement(end_elem, "endNac")
-        # SubElement(end_nac, "cMun").text = "4205407"
-        # SubElement(end_nac, "CEP").text = "88010000"
-        # SubElement(end_elem, "xLgr").text = "Rua Felipe Schmidt"
-        # SubElement(end_elem, "nro").text = "100"
-        # SubElement(end_elem, "xBairro").text = "Centro"
-        
         # 5. regTrib - Regimes Tributários (obrigatório)
-        reg_trib = SubElement(parent, "regTrib")
         # opSimpNac: 1=Não optante, 2=Optante SN, 3=MEI
-        # CNPJ 05.863.340/0001-60 validado pela Receita Federal como MEI (E0041)
-        SubElement(reg_trib, "opSimpNac").text = "3"  # 3=MEI
-        # regApTribSN: não enviado para MEI (apenas para Optante SN)
+        reg_trib = SubElement(parent, "regTrib")
+        if mei:
+            SubElement(reg_trib, "opSimpNac").text = "3"
+        elif optante_simples_nacional:
+            SubElement(reg_trib, "opSimpNac").text = "2"
+            # 1=Federação/Estadual/Municipal, 2=ISS municipal (comum para serviços)
+            SubElement(reg_trib, "regApTribSN").text = "1"
+        else:
+            SubElement(reg_trib, "opSimpNac").text = "1"
         SubElement(reg_trib, "regEspTrib").text = "0"  # 0=Nenhum
     
     def _add_tomador_v101(self, parent: Element, tomador: TomadorServico):
@@ -193,12 +193,19 @@ class NFSeXMLGenerator:
         # xNome - Nome
         SubElement(parent, "xNome").text = tomador.nome
     
-    def _add_servico_v101(self, parent: Element, servico: Servico):
+    def _add_servico_v101(
+        self,
+        parent: Element,
+        servico: Servico,
+        *,
+        c_mun_prestacao: str = "4317202",
+    ):
         """Adiciona dados do serviço conforme XSD v1.01."""
         
         # 1. locPrest - Local da Prestação
         loc_prest = SubElement(parent, "locPrest")
-        SubElement(loc_prest, "cLocPrestacao").text = "4318002"  # Santa Rosa-RS
+        c_loc = "".join(ch for ch in str(c_mun_prestacao or "4317202") if ch.isdigit()).zfill(7)[:7]
+        SubElement(loc_prest, "cLocPrestacao").text = c_loc
         
         # 2. cServ - Elemento container para códigos e descrição do serviço
         c_serv_elem = SubElement(parent, "cServ")

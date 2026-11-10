@@ -98,7 +98,7 @@ class NFSeService:
                 "cep": "98789104",
                 "email": "cadastro@dominiocontabil.com.br",
                 "telefone": "4836327480",
-                "codigo_municipio": "4318002",
+                "codigo_municipio": "4317202",
             }
     
     def _extrair_id_dps_do_erro(self, response_body: Any) -> Optional[str]:
@@ -374,7 +374,7 @@ class NFSeService:
                     aliquota_iss=float(config_servico.get("aliquota_iss", 2.01)),
                     codigo_servico=config_servico.get("item_lista", "40303"),
                     nbs=config_servico.get("nbs", "1.2301.21.00"),
-                    codigo_municipio="4318002",
+                    codigo_municipio="4317202",
                     bairro_tomador=registro.get("bairro", "NAO INFORMADO"),
                     cep_tomador=registro.get("cep", "00000000"),
                     logradouro_tomador=registro.get("logradouro", "NAO INFORMADO"),
