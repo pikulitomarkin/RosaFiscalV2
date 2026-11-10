@@ -12,9 +12,11 @@ from typing import Any, Dict, List, Optional
 
 import bcrypt
 import psycopg2
+from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import pkcs12
+from cryptography.x509.oid import NameOID
 
 from config.settings import settings
 from src.utils.logger import app_logger
@@ -277,26 +279,56 @@ def save_user_profile(profile: UserProfile, *, update_password: Optional[str] = 
     conn.close()
 
 
+def cert_arquivos_ok(profile: UserProfile) -> bool:
+    """True se PEM/key existem no volume (independente de CNPJ)."""
+    try:
+        return bool(
+            profile.cert_pem.exists()
+            and profile.key_pem.exists()
+            and profile.cert_pem.stat().st_size > 0
+            and profile.key_pem.stat().st_size > 0
+        )
+    except Exception:
+        return False
+
+
 def cert_pronto(profile: UserProfile) -> bool:
-    return bool(
-        profile.cnpj
-        and profile.cert_pem.exists()
-        and profile.key_pem.exists()
-        and profile.cert_pem.stat().st_size > 0
-        and profile.key_pem.stat().st_size > 0
-    )
+    """Pronto para emitir: CNPJ no perfil + PEM/key no volume."""
+    return bool(re.sub(r"\D", "", profile.cnpj or "")) and cert_arquivos_ok(profile)
+
+
+def _cnpj_e_nome_do_certificado(certificate: x509.Certificate) -> tuple[str, str]:
+    """Extrai CNPJ (14 dígitos) e razão social do CN do A1 ICP-Brasil."""
+    try:
+        cn = certificate.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+    except Exception:
+        return "", ""
+    cn = str(cn or "").strip()
+    m = re.search(r":(\d{14})\s*$", cn)
+    cnpj = m.group(1) if m else ""
+    razao = cn.rsplit(":", 1)[0].strip() if m else cn
+    return cnpj, razao
 
 
 def save_user_certificate_pfx(username: str, pfx_bytes: bytes, password: str) -> UserProfile:
-    """Converte PFX/P12 em PEM por usuário e persiste senha do certificado."""
+    """Converte PFX/P12 em PEM por usuário e persiste senha do certificado.
+
+    Se o perfil ainda não tiver CNPJ, preenche a partir do subject do A1
+    (padrão ICP-Brasil `RAZAO:CNPJ`), para o status não ficar 'pendente' após salvar.
+    """
     profile = get_user_profile(username)
     if not profile:
         raise RuntimeError(f"Usuário {username} não encontrado")
 
     password_bytes = password.encode() if password else None
-    private_key, certificate, _additional = pkcs12.load_key_and_certificates(
-        pfx_bytes, password_bytes, default_backend()
-    )
+    try:
+        private_key, certificate, _additional = pkcs12.load_key_and_certificates(
+            pfx_bytes, password_bytes, default_backend()
+        )
+    except ValueError as e:
+        raise RuntimeError(
+            "Não foi possível abrir o PFX — confira a senha do certificado A1."
+        ) from e
     if private_key is None or certificate is None:
         raise RuntimeError("PFX inválido: certificado ou chave ausente")
 
@@ -317,9 +349,20 @@ def save_user_certificate_pfx(username: str, pfx_bytes: bytes, password: str) ->
     except Exception:
         pass
 
+    cnpj_cert, razao_cert = _cnpj_e_nome_do_certificado(certificate)
+    if cnpj_cert and not re.sub(r"\D", "", profile.cnpj or ""):
+        profile.cnpj = cnpj_cert
+    if razao_cert and not (profile.razao_social or "").strip():
+        profile.razao_social = razao_cert
+        if not (profile.nome_fantasia or "").strip():
+            profile.nome_fantasia = razao_cert.split()[0] if razao_cert else ""
+
     profile.cert_password = password or ""
     save_user_profile(profile)
-    app_logger.info(f"Certificado A1 salvo para usuário={username}")
+    app_logger.info(
+        f"Certificado A1 salvo para usuário={username} cnpj={profile.cnpj or '(vazio)'} "
+        f"arquivos_ok={cert_arquivos_ok(profile)} pronto={cert_pronto(profile)}"
+    )
     return profile
 
 

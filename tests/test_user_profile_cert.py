@@ -11,9 +11,9 @@ from cryptography.x509.oid import NameOID
 import datetime
 
 
-def _make_pfx(password: bytes) -> bytes:
+def _make_pfx(password: bytes, common_name: str = "TESTE NFSE") -> bytes:
     key = rsa.generate_private_key(65537, 2048, default_backend())
-    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "TESTE NFSE")])
+    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
     cert = (
         x509.CertificateBuilder()
         .subject_name(subject)
@@ -58,6 +58,36 @@ def test_pfx_roundtrip_pem(tmp_path, monkeypatch):
     assert b"PRIVATE KEY" in out.key_pem.read_bytes()
     assert saved["profile"].cert_password == "senha123"
     assert profile_mod.cert_pronto(out)
+
+
+def test_pfx_autofills_cnpj_when_profile_empty(tmp_path, monkeypatch):
+    from src.users import profile as profile_mod
+
+    monkeypatch.setattr(profile_mod, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(profile_mod, "ensure_user_columns", lambda: None)
+
+    saved = {}
+
+    def fake_get(username):
+        # guilherme sem CNPJ — sintoma do "processa mas não salva"
+        return profile_mod.UserProfile(username=username, cnpj="")
+
+    def fake_save(p, update_password=None):
+        saved["profile"] = p
+
+    monkeypatch.setattr(profile_mod, "get_user_profile", fake_get)
+    monkeypatch.setattr(profile_mod, "save_user_profile", fake_save)
+
+    pfx = _make_pfx(
+        b"senha123",
+        common_name="NEUROCLIN SERVICOS MEDICOS LTDA:05863340000160",
+    )
+    out = profile_mod.save_user_certificate_pfx("guilherme", pfx, "senha123")
+    assert out.cnpj == "05863340000160"
+    assert "NEUROCLIN" in (out.razao_social or "")
+    assert profile_mod.cert_arquivos_ok(out)
+    assert profile_mod.cert_pronto(out)
+    assert saved["profile"].cnpj == "05863340000160"
 
 
 def test_prestador_dict_address_per_user():

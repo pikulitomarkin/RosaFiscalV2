@@ -1746,6 +1746,7 @@ def render_settings():
     from src.users.profile import (
         DEFAULT_PRESTADOR_ADDRESS,
         UserProfile,
+        cert_arquivos_ok,
         cert_pronto,
         get_user_profile,
         save_user_certificate_pfx,
@@ -1772,6 +1773,7 @@ def render_settings():
         "Só a configuração de imposto/serviço fica compartilhada."
     )
 
+    # Não pré-preencher endereço de outro prestador (ex.: nathalia) em usuários vazios.
     with st.form("perfil_fiscal_form"):
         st.markdown("#### Empresa")
         col1, col2 = st.columns(2)
@@ -1783,15 +1785,18 @@ def render_settings():
         with col2:
             email_c_in = st.text_input(
                 "E-mail contato",
-                value=profile.email_contato or DEFAULT_PRESTADOR_ADDRESS["email_contato"],
+                value=profile.email_contato or "",
+                placeholder=DEFAULT_PRESTADOR_ADDRESS["email_contato"],
             )
             tel_in = st.text_input(
                 "Telefone",
-                value=profile.telefone or DEFAULT_PRESTADOR_ADDRESS["telefone"],
+                value=profile.telefone or "",
+                placeholder=DEFAULT_PRESTADOR_ADDRESS["telefone"],
             )
             ibge_in = st.text_input(
                 "Código IBGE município",
-                value=profile.codigo_municipio or DEFAULT_PRESTADOR_ADDRESS["codigo_municipio"],
+                value=profile.codigo_municipio or "",
+                placeholder=DEFAULT_PRESTADOR_ADDRESS["codigo_municipio"],
             )
 
         st.markdown("#### Endereço do prestador")
@@ -1799,31 +1804,37 @@ def render_settings():
         with a1:
             log_in = st.text_input(
                 "Logradouro",
-                value=profile.logradouro or DEFAULT_PRESTADOR_ADDRESS["logradouro"],
+                value=profile.logradouro or "",
+                placeholder=DEFAULT_PRESTADOR_ADDRESS["logradouro"],
             )
             bairro_in = st.text_input(
                 "Bairro",
-                value=profile.bairro or DEFAULT_PRESTADOR_ADDRESS["bairro"],
+                value=profile.bairro or "",
+                placeholder=DEFAULT_PRESTADOR_ADDRESS["bairro"],
             )
         with a2:
             num_in = st.text_input(
                 "Número",
-                value=profile.numero or DEFAULT_PRESTADOR_ADDRESS["numero"],
+                value=profile.numero or "",
+                placeholder=DEFAULT_PRESTADOR_ADDRESS["numero"],
             )
             mun_in = st.text_input(
                 "Município",
-                value=profile.municipio or DEFAULT_PRESTADOR_ADDRESS["municipio"],
+                value=profile.municipio or "",
+                placeholder=DEFAULT_PRESTADOR_ADDRESS["municipio"],
             )
         with a3:
             comp_in = st.text_input("Complemento", value=profile.complemento or "")
             uf_in = st.text_input(
                 "UF",
-                value=profile.uf or DEFAULT_PRESTADOR_ADDRESS["uf"],
+                value=profile.uf or "",
                 max_chars=2,
+                placeholder=DEFAULT_PRESTADOR_ADDRESS["uf"],
             )
             cep_in = st.text_input(
                 "CEP",
-                value=profile.cep or DEFAULT_PRESTADOR_ADDRESS["cep"],
+                value=profile.cep or "",
+                placeholder=DEFAULT_PRESTADOR_ADDRESS["cep"],
             )
 
         salvar_perfil = st.form_submit_button(
@@ -1858,9 +1869,18 @@ def render_settings():
     st.markdown("---")
     st.markdown("### 🔐 Certificado Digital A1 (deste usuário)")
     if cert_pronto(profile):
-        st.success(f"Certificado PEM pronto em `data/certs/{username}/`")
+        st.success(
+            f"Certificado A1 pronto (CNPJ {profile.cnpj}) em `data/certs/{username}/`."
+        )
+    elif cert_arquivos_ok(profile):
+        st.warning(
+            "Arquivos PEM já estão no disco, mas falta **CNPJ** no perfil acima. "
+            "Salve o CNPJ ou reenvie o PFX (o CNPJ do certificado será preenchido automaticamente)."
+        )
     else:
-        st.warning("Envie o arquivo PFX/P12 e a senha do certificado para habilitar a emissão.")
+        st.warning(
+            "Envie o PFX/P12 e a senha do A1. Se o CNPJ estiver vazio, ele será lido do certificado."
+        )
 
     pfx_file = st.file_uploader("Arquivo PFX / P12", type=["pfx", "p12"], key="pfx_upload")
     cert_pwd = st.text_input(
@@ -1876,8 +1896,18 @@ def render_settings():
             st.error("Informe a senha do certificado.")
         else:
             try:
-                save_user_certificate_pfx(username, pfx_file.getvalue(), cert_pwd)
-                st.success("✅ Certificado A1 convertido e salvo para este usuário.")
+                saved = save_user_certificate_pfx(username, pfx_file.getvalue(), cert_pwd)
+                if cert_pronto(saved):
+                    st.success(
+                        f"✅ Certificado A1 salvo. CNPJ {saved.cnpj} — emissão liberada para este usuário."
+                    )
+                elif cert_arquivos_ok(saved):
+                    st.warning(
+                        "PEM salvo, mas ainda falta CNPJ no perfil. "
+                        "Preencha o CNPJ acima e clique em Salvar, ou use um PFX com CNPJ no subject."
+                    )
+                else:
+                    st.error("Processou o PFX, mas os arquivos PEM não ficaram no disco.")
                 st.rerun()
             except Exception as e:
                 app_logger.exception("Falha ao salvar PFX")
