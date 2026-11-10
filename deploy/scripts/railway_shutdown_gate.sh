@@ -24,9 +24,12 @@ PY
 
 if [[ "$READY" != "true" ]]; then
   echo
-  echo "GATE FECHADO: cutover_ready=false (blocker típico: IPM_SENHA / IPM_AUTH)."
+  echo "GATE FECHADO: cutover_ready=false."
+  echo "Sefin: precisa seed nathalia/guilherme + schema (deploy branch API nacional)."
+  echo "IPM legado: IPM_SENHA + auth OK."
   echo "Não desligue o Railway ainda."
-  echo "Após senha IPM válida (auth OK): bash deploy/scripts/post_cutover_check.sh"
+  echo "Recuperação SSH: https://vps12436.panel.icontainer.site:2090/admin → Terminal"
+  echo "  bash /opt/rosafiscal/deploy/scripts/icp_recover_ssh.sh   # após git pull do branch"
   exit 2
 fi
 
@@ -34,7 +37,7 @@ cat <<'EOF'
 
 GATE ABERTO — cutover_ready=true
 Checklist para desligar o Railway (manual):
-1. Confirme emissão real de 1 NFS-e pela VPS (dashboard ou test_ipm_auth + lote).
+1. Confirme emissão real de 1 NFS-e pela VPS (Sefin com cert A1, ou IPM legado).
 2. No Railway: pause/stop o serviço Streamlit antigo (não delete o volume/DB até backup extra).
 3. Remova DNS/custom domain apontando ao Railway, se houver.
 4. Mantenha só https://vps12436.panel.icontainer.site/ como URL oficial.
