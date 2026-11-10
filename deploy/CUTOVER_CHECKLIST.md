@@ -13,32 +13,26 @@ Atualizado com evidência na VPS `184.107.179.79` e migração para **API Nacion
 | Backup automático | cron 03:15 | OK |
 | Restore dry-run | backup `20261105_203203` | OK |
 | Root/admin rotacionados | `/root/rosafiscal_rotated_credentials.txt` | OK (ops: cofre) |
-| Branch API nacional no Git | `cursor/api-nacional-multiusuario-ddd1` / PR #3 | OK (código) |
-| **Deploy branch na VPS** | git tip = PR #3 + seed | **BLOQUEADO (SSH)** |
-| Seed `nathalia` + `guilherme` | `seed_multiusuarios.py` (senha `admin`) | PENDENTE (após deploy) |
-| Cert A1 por usuário (PFX) | `data/certs/{user}/` | PENDENTE (UI) |
-| Endereço/CNPJ por usuário | colunas + Configurações | PENDENTE (deploy) |
-| Emissão Sefin validada | smoke real | PENDENTE |
+| Branch API nacional no Git | `cursor/api-nacional-multiusuario-ddd1` / PR #3 | OK |
+| **Deploy branch na VPS** | tip `379fee2` + rebuild app | **OK** |
+| Seed `nathalia` + `guilherme` | senha login `admin`; ambos `is_admin` | **OK** |
+| Cert A1 por usuário (PFX) | `data/certs/{user}/` | PENDENTE (UI — enviar PFX) |
+| Endereço/CNPJ por usuário | nathalia OK; guilherme preencher na UI | PARCIAL |
+| Emissão Sefin validada | smoke real com A1 | PENDENTE |
 | Desligar Railway | só após emissão validada | PENDENTE |
 
-## Bloqueio atual (ops)
-Acesso SSH do Cloud Agent: senha root antiga inválida; chave privada da migração perdida no VM efêmero.
-Porta 22 pode estar em **fail2ban** para o IP do agent após tentativas falhas.
+## Status ops (2026-11-10)
 
-**Recuperação via ICP (confirmado HTTP 200):**  
-https://vps12436.panel.icontainer.site:2090/admin → **Server → Terminal**
+- SSH do Cloud Agent restaurado (chave `cursor-cloud-rosafiscal-20261110` em `authorized_keys`).
+- `cutover_ready=true`, `emission_backend=sefin`, `validate_migracao.sh` → OK=10 FAIL=0.
+- Gate Railway aberto (`railway_shutdown_gate.sh`); **não desligar** até smoke de emissão Sefin com certificado A1.
 
-```bash
-cat /root/rosafiscal_rotated_credentials.txt
-mkdir -p /root/.ssh && chmod 700 /root/.ssh
-echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAIzVVbceUBZMfbnyC/L08wPIaEsVtJdib/05SryzN7O cursor-cloud-rosafiscal-20261110' >> /root/.ssh/authorized_keys
-chmod 600 /root/.ssh/authorized_keys
-# se fail2ban bloqueou o agent:
-fail2ban-client set sshd unbanip --all 2>/dev/null || true
-```
+Logins produção: https://vps12436.panel.icontainer.site/
 
-Guia: `deploy/SSH_RECOVERY.md`  
-Depois: `./deploy/scripts/agent_deploy_vps.sh`
+| Usuário | Senha | CNPJ |
+|---------|-------|------|
+| `nathalia` | `admin` | `56169351000185` |
+| `guilherme` | `admin` | (Configurações) |
 
 ## Nota sobre IPM
 O fluxo padrão passou a ser **Sefin (API nacional)**. IPM permanece legado (`emission_backend=ipm`). `IPM_SENHA` / auth 401 **não** bloqueiam o cutover sefin.

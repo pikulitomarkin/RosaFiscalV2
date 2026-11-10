@@ -49,7 +49,7 @@ LOGIN_USERS = (
         "email_contato": "",
         "telefone": "",
         "codigo_municipio": "",
-        "is_admin": False,
+        "is_admin": True,
     },
 )
 

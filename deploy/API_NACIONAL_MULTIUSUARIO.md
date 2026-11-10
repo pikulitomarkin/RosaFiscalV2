@@ -9,7 +9,7 @@
 | Usuário     | Senha login | CNPJ              | Certificado                          |
 |-------------|-------------|-------------------|--------------------------------------|
 | `nathalia`  | `admin`     | `56169351000185`  | enviar PFX em Configurações          |
-| `guilherme` | `admin`     | (preencher na UI) | enviar PFX em Configurações          |
+| `guilherme` | `admin`     | (preencher na UI) | enviar PFX em Configurações (admin)  |
 
 ## Seed na VPS
 ```bash

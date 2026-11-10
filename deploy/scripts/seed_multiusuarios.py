@@ -53,7 +53,7 @@ USERS = [
         "inscricao_municipal": "",
         "razao_social": "",
         "nome_fantasia": "",
-        "is_admin": False,
+        "is_admin": True,
         "logradouro": "",
         "numero": "",
         "complemento": "",
