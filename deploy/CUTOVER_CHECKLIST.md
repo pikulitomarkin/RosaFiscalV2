@@ -40,18 +40,24 @@ created_at=2026-11-10 23:50:26 UTC (20:50 America/Sao_Paulo)
 Enum oficial: `opSimpNac` **1=Não optante, 2=MEI, 3=ME/EPP**.  
 Código antigo enviava `2` para ME/EPP → Sefin tratava como MEI → E0160.
 
-## Pause Railway (manual — último passo)
+## Pause Railway (último passo — bloqueado sem token)
 
-Gate já aberto:
+Gate já aberto (`cutover_ready` + `emission_ready`). Backup pós-smoke: `20261110_205138`.
+
+**Opção A — painel:** https://railway.app → pause/stop do Streamlit antigo (não apague DB/volume).
+
+**Opção B — agent/CLI** (quando houver token):
 
 ```bash
-bash /opt/rosafiscal/deploy/scripts/railway_shutdown_gate.sh
+# https://railway.app/account/tokens
+printf '%s' 'TOKEN' > secrets/RAILWAY_TOKEN && chmod 600 secrets/RAILWAY_TOKEN
+./deploy/scripts/agent_pause_railway.sh
+# ou watcher:
+./deploy/scripts/agent_watch_railway_pause.sh
 ```
 
-No painel https://railway.app → pause/stop do Streamlit antigo (não apague DB/volume até backup).  
-URL oficial: https://vps12436.panel.icontainer.site/
-
-Para o agent pausar via CLI, falta secret `RAILWAY_TOKEN` (Account → Tokens).
+URL oficial: https://vps12436.panel.icontainer.site/  
+Sem `RAILWAY_TOKEN` / project link, o Cloud Agent **não consegue** confirmar nem pausar o Railway.
 
 ## Logins
 
