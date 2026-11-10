@@ -104,6 +104,17 @@ class Usuario(Base):
     razao_social = Column(String(200), nullable=True)
     nome_fantasia = Column(String(150), nullable=True)
     cert_password = Column(String(255), nullable=True)  # senha do A1 (PFX)
+    # Endereço do prestador (por usuário)
+    logradouro = Column(String(125), nullable=True)
+    numero = Column(String(20), nullable=True)
+    complemento = Column(String(60), nullable=True)
+    bairro = Column(String(60), nullable=True)
+    municipio = Column(String(60), nullable=True)
+    uf = Column(String(2), nullable=True)
+    cep = Column(String(8), nullable=True)
+    email_contato = Column(String(100), nullable=True)
+    telefone = Column(String(20), nullable=True)
+    codigo_municipio = Column(String(7), nullable=True)
     
     # Status
     is_active = Column(Boolean, default=True)

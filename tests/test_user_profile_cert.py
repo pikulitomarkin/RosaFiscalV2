@@ -60,8 +60,8 @@ def test_pfx_roundtrip_pem(tmp_path, monkeypatch):
     assert profile_mod.cert_pronto(out)
 
 
-def test_prestador_dict_shared_city():
-    from src.users.profile import SHARED_PRESTADOR_BASE, UserProfile
+def test_prestador_dict_address_per_user():
+    from src.users.profile import DEFAULT_PRESTADOR_ADDRESS, UserProfile
 
     p = UserProfile(
         username="empresa2",
@@ -69,9 +69,23 @@ def test_prestador_dict_shared_city():
         inscricao_municipal="111",
         razao_social="EMPRESA DOIS LTDA",
         nome_fantasia="EMPRESA 2",
+        logradouro="AV OUTRA",
+        numero="10",
+        bairro="CENTRO",
+        municipio="PORTO ALEGRE",
+        uf="RS",
+        cep="90010-000",
+        codigo_municipio="4314902",
     )
     d = p.prestador_dict()
     assert d["cnpj"] == "12345678000199"
-    assert d["municipio"] == SHARED_PRESTADOR_BASE["municipio"]
-    assert d["codigo_municipio"] == SHARED_PRESTADOR_BASE["codigo_municipio"]
+    assert d["municipio"] == "PORTO ALEGRE"
+    assert d["logradouro"] == "AV OUTRA"
+    assert d["cep"] == "90010000"
+    assert d["codigo_municipio"] == "4314902"
     assert d["razao_social"] == "EMPRESA DOIS LTDA"
+
+    # sem endereço preenchido → fallback default
+    p2 = UserProfile(username="x", cnpj="56169351000185")
+    d2 = p2.prestador_dict()
+    assert d2["municipio"] == DEFAULT_PRESTADOR_ADDRESS["municipio"]

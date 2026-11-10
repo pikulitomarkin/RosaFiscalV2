@@ -1,6 +1,6 @@
 """
-Perfil por usuário: CNPJ + certificado A1 (PEM) + senha do certificado.
-Cidade / endereço / imposto compartilhados via SHARED_PRESTADOR_BASE + runtime.
+Perfil por usuário: CNPJ + certificado A1 + endereço + senha do certificado.
+Imposto/serviço padrão permanece compartilhado via runtime_config.
 """
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ from config.settings import settings
 from src.utils.logger import app_logger
 from src.utils.runtime_config import DATA_DIR, PRESTADOR_OFICIAL
 
-# Endereço / município / contato iguais para todos os emissores desta instalação
-SHARED_PRESTADOR_BASE: Dict[str, str] = {
+# Defaults só para seed / fallback (Nathalia). Cada usuário pode sobrescrever na UI.
+DEFAULT_PRESTADOR_ADDRESS: Dict[str, str] = {
     "logradouro": "RUA TARQUINIO DE OLIVEIRA",
     "numero": "249",
     "complemento": "",
@@ -29,10 +29,13 @@ SHARED_PRESTADOR_BASE: Dict[str, str] = {
     "municipio": "SANTA ROSA",
     "uf": "RS",
     "cep": "98789104",
-    "email": "cadastro@dominiocontabil.com.br",
+    "email_contato": "cadastro@dominiocontabil.com.br",
     "telefone": "4836327480",
     "codigo_municipio": "4318002",
 }
+
+# Alias legado (imports antigos)
+SHARED_PRESTADOR_BASE = DEFAULT_PRESTADOR_ADDRESS
 
 
 @dataclass
@@ -45,6 +48,16 @@ class UserProfile:
     razao_social: str = ""
     nome_fantasia: str = ""
     cert_password: str = ""
+    logradouro: str = ""
+    numero: str = ""
+    complemento: str = ""
+    bairro: str = ""
+    municipio: str = ""
+    uf: str = ""
+    cep: str = ""
+    email_contato: str = ""
+    telefone: str = ""
+    codigo_municipio: str = ""
     is_admin: bool = False
     is_active: bool = True
 
@@ -61,16 +74,40 @@ class UserProfile:
         return self.cert_dir / "key.pem"
 
     def prestador_dict(self) -> Dict[str, Any]:
-        base = dict(SHARED_PRESTADOR_BASE)
-        base.update(
-            {
-                "cnpj": re.sub(r"\D", "", self.cnpj) or PRESTADOR_OFICIAL["cnpj"],
-                "inscricao_municipal": (self.inscricao_municipal or PRESTADOR_OFICIAL["inscricao_municipal"]).strip(),
-                "razao_social": (self.razao_social or PRESTADOR_OFICIAL["razao_social"]).strip(),
-                "nome_fantasia": (self.nome_fantasia or PRESTADOR_OFICIAL["nome_fantasia"]).strip(),
-            }
-        )
-        return base
+        def _or(val: str, key: str) -> str:
+            v = (val or "").strip()
+            return v if v else DEFAULT_PRESTADOR_ADDRESS.get(key, "")
+
+        return {
+            "cnpj": re.sub(r"\D", "", self.cnpj) or PRESTADOR_OFICIAL["cnpj"],
+            "inscricao_municipal": (self.inscricao_municipal or PRESTADOR_OFICIAL["inscricao_municipal"]).strip(),
+            "razao_social": (self.razao_social or PRESTADOR_OFICIAL["razao_social"]).strip(),
+            "nome_fantasia": (self.nome_fantasia or PRESTADOR_OFICIAL["nome_fantasia"]).strip(),
+            "logradouro": _or(self.logradouro, "logradouro"),
+            "numero": _or(self.numero, "numero"),
+            "complemento": (self.complemento or "").strip(),
+            "bairro": _or(self.bairro, "bairro"),
+            "municipio": _or(self.municipio, "municipio"),
+            "uf": _or(self.uf, "uf"),
+            "cep": re.sub(r"\D", "", self.cep) or DEFAULT_PRESTADOR_ADDRESS["cep"],
+            "email": _or(self.email_contato, "email_contato"),
+            "telefone": re.sub(r"\D", "", self.telefone) or DEFAULT_PRESTADOR_ADDRESS["telefone"],
+            "codigo_municipio": _or(self.codigo_municipio, "codigo_municipio"),
+        }
+
+
+ADDRESS_COLUMNS = [
+    ("logradouro", "VARCHAR(125)"),
+    ("numero", "VARCHAR(20)"),
+    ("complemento", "VARCHAR(60)"),
+    ("bairro", "VARCHAR(60)"),
+    ("municipio", "VARCHAR(60)"),
+    ("uf", "VARCHAR(2)"),
+    ("cep", "VARCHAR(8)"),
+    ("email_contato", "VARCHAR(100)"),
+    ("telefone", "VARCHAR(20)"),
+    ("codigo_municipio", "VARCHAR(7)"),
+]
 
 
 def _sync_dsn() -> str:
@@ -79,7 +116,7 @@ def _sync_dsn() -> str:
 
 
 def ensure_user_columns() -> None:
-    """Adiciona colunas de perfil nacional se ainda não existirem (Postgres)."""
+    """Adiciona colunas de perfil nacional + endereço se ainda não existirem."""
     dsn = _sync_dsn()
     if not dsn.startswith("postgresql://"):
         return
@@ -90,6 +127,8 @@ def ensure_user_columns() -> None:
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS nome_fantasia VARCHAR(150)",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cert_password VARCHAR(255)",
     ]
+    for col, typ in ADDRESS_COLUMNS:
+        alters.append(f"ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS {col} {typ}")
     try:
         conn = psycopg2.connect(dsn)
         conn.autocommit = True
@@ -118,7 +157,12 @@ def get_user_profile(username: str) -> Optional[UserProfile]:
             SELECT username, COALESCE(nome_completo,''), COALESCE(email,''),
                    COALESCE(cnpj,''), COALESCE(inscricao_municipal,''),
                    COALESCE(razao_social,''), COALESCE(nome_fantasia,''),
-                   COALESCE(cert_password,''), COALESCE(is_admin,false), COALESCE(is_active,true)
+                   COALESCE(cert_password,''),
+                   COALESCE(logradouro,''), COALESCE(numero,''), COALESCE(complemento,''),
+                   COALESCE(bairro,''), COALESCE(municipio,''), COALESCE(uf,''),
+                   COALESCE(cep,''), COALESCE(email_contato,''), COALESCE(telefone,''),
+                   COALESCE(codigo_municipio,''),
+                   COALESCE(is_admin,false), COALESCE(is_active,true)
             FROM usuarios WHERE username = %s
             """,
             (username,),
@@ -137,8 +181,18 @@ def get_user_profile(username: str) -> Optional[UserProfile]:
             razao_social=row[5] or "",
             nome_fantasia=row[6] or "",
             cert_password=row[7] or "",
-            is_admin=bool(row[8]),
-            is_active=bool(row[9]),
+            logradouro=row[8] or "",
+            numero=row[9] or "",
+            complemento=row[10] or "",
+            bairro=row[11] or "",
+            municipio=row[12] or "",
+            uf=row[13] or "",
+            cep=row[14] or "",
+            email_contato=row[15] or "",
+            telefone=row[16] or "",
+            codigo_municipio=row[17] or "",
+            is_admin=bool(row[18]),
+            is_active=bool(row[19]),
         )
     except Exception as e:
         app_logger.error(f"get_user_profile: {e}")
@@ -178,7 +232,17 @@ def save_user_profile(profile: UserProfile, *, update_password: Optional[str] = 
             inscricao_municipal = %s,
             razao_social = %s,
             nome_fantasia = %s,
-            cert_password = COALESCE(NULLIF(%s, ''), cert_password)
+            cert_password = COALESCE(NULLIF(%s, ''), cert_password),
+            logradouro = %s,
+            numero = %s,
+            complemento = %s,
+            bairro = %s,
+            municipio = %s,
+            uf = %s,
+            cep = %s,
+            email_contato = %s,
+            telefone = %s,
+            codigo_municipio = %s
         WHERE username = %s
         """,
         (
@@ -189,6 +253,16 @@ def save_user_profile(profile: UserProfile, *, update_password: Optional[str] = 
             profile.razao_social,
             profile.nome_fantasia,
             profile.cert_password,
+            profile.logradouro,
+            profile.numero,
+            profile.complemento,
+            profile.bairro,
+            profile.municipio,
+            (profile.uf or "").upper()[:2],
+            re.sub(r"\D", "", profile.cep),
+            profile.email_contato,
+            re.sub(r"\D", "", profile.telefone),
+            re.sub(r"\D", "", profile.codigo_municipio),
             profile.username,
         ),
     )
@@ -230,7 +304,6 @@ def save_user_certificate_pfx(username: str, pfx_bytes: bytes, password: str) ->
     profile.cert_pem.write_bytes(
         certificate.public_bytes(serialization.Encoding.PEM)
     )
-    # Chave sem senha no disco do volume (acesso restrito ao container)
     profile.key_pem.write_bytes(
         private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
@@ -251,7 +324,7 @@ def save_user_certificate_pfx(username: str, pfx_bytes: bytes, password: str) ->
 
 
 def get_nfse_service_for_username(username: str):
-    """Instancia NFSeService com certificado e CNPJ do usuário logado."""
+    """Instancia NFSeService com certificado, CNPJ e endereço do usuário logado."""
     from src.api.nfse_service import NFSeService
 
     profile = get_user_profile(username)

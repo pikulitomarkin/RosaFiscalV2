@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Seed de 2 usuários para API nacional (certificado A1 + CNPJ por usuário).
+Seed de 2 usuários para API nacional (certificado A1 + CNPJ + endereço por usuário).
 
-Cidade / endereço / imposto são compartilhados (SHARED_PRESTADOR_BASE).
-Só CNPJ, IM, razão social e certificado mudam por usuário.
+Imposto/serviço padrão permanece compartilhado.
+CNPJ, endereço e certificado mudam por usuário.
 
 Uso (VPS / container app):
   docker compose exec -T app python deploy/scripts/seed_multiusuarios.py
@@ -18,6 +18,19 @@ import sys
 import bcrypt
 import psycopg2
 
+NATHALIA_ADDR = {
+    "logradouro": "RUA TARQUINIO DE OLIVEIRA",
+    "numero": "249",
+    "complemento": "",
+    "bairro": "CRUZEIRO",
+    "municipio": "SANTA ROSA",
+    "uf": "RS",
+    "cep": "98789104",
+    "email_contato": "cadastro@dominiocontabil.com.br",
+    "telefone": "4836327480",
+    "codigo_municipio": "4318002",
+}
+
 USERS = [
     {
         "username": "nathalia",
@@ -29,18 +42,34 @@ USERS = [
         "razao_social": "NATHALIA GABRIELA SERVICOS DE SAUDE LTDA",
         "nome_fantasia": "NATHALIA GABRIELA",
         "is_admin": True,
+        **NATHALIA_ADDR,
     },
     {
         "username": "empresa2",
         "password": "medico",
-        "nome_completo": "Empresa 2 (configurar CNPJ e certificado)",
+        "nome_completo": "Empresa 2 (configurar CNPJ, endereço e certificado)",
         "email": "empresa2@localhost",
-        "cnpj": "",  # preencher em Configurações
+        "cnpj": "",
         "inscricao_municipal": "",
         "razao_social": "",
         "nome_fantasia": "",
         "is_admin": False,
+        "logradouro": "",
+        "numero": "",
+        "complemento": "",
+        "bairro": "",
+        "municipio": "",
+        "uf": "",
+        "cep": "",
+        "email_contato": "",
+        "telefone": "",
+        "codigo_municipio": "",
     },
+]
+
+ADDR_COLS = [
+    "logradouro", "numero", "complemento", "bairro", "municipio",
+    "uf", "cep", "email_contato", "telefone", "codigo_municipio",
 ]
 
 
@@ -54,13 +83,24 @@ def main() -> int:
     conn.autocommit = True
     cur = conn.cursor()
 
-    for stmt in (
+    alters = [
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cnpj VARCHAR(14)",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS inscricao_municipal VARCHAR(30)",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS razao_social VARCHAR(200)",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS nome_fantasia VARCHAR(150)",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cert_password VARCHAR(255)",
-    ):
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS logradouro VARCHAR(125)",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS numero VARCHAR(20)",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS complemento VARCHAR(60)",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS bairro VARCHAR(60)",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS municipio VARCHAR(60)",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS uf VARCHAR(2)",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cep VARCHAR(8)",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email_contato VARCHAR(100)",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefone VARCHAR(20)",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS codigo_municipio VARCHAR(7)",
+    ]
+    for stmt in alters:
         try:
             cur.execute(stmt)
         except Exception as e:
@@ -69,12 +109,17 @@ def main() -> int:
     for u in USERS:
         pw_hash = bcrypt.hashpw(u["password"].encode(), bcrypt.gensalt()).decode()
         cur.execute(
-            """
+            f"""
             INSERT INTO usuarios (
                 username, password_hash, nome_completo, email,
                 cnpj, inscricao_municipal, razao_social, nome_fantasia,
+                {", ".join(ADDR_COLS)},
                 is_active, is_admin
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,true,%s)
+            ) VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s,
+                {", ".join(["%s"] * len(ADDR_COLS))},
+                true,%s
+            )
             ON CONFLICT (username) DO UPDATE SET
                 password_hash = EXCLUDED.password_hash,
                 nome_completo = EXCLUDED.nome_completo,
@@ -83,6 +128,16 @@ def main() -> int:
                 inscricao_municipal = COALESCE(NULLIF(EXCLUDED.inscricao_municipal, ''), usuarios.inscricao_municipal),
                 razao_social = COALESCE(NULLIF(EXCLUDED.razao_social, ''), usuarios.razao_social),
                 nome_fantasia = COALESCE(NULLIF(EXCLUDED.nome_fantasia, ''), usuarios.nome_fantasia),
+                logradouro = COALESCE(NULLIF(EXCLUDED.logradouro, ''), usuarios.logradouro),
+                numero = COALESCE(NULLIF(EXCLUDED.numero, ''), usuarios.numero),
+                complemento = COALESCE(EXCLUDED.complemento, usuarios.complemento),
+                bairro = COALESCE(NULLIF(EXCLUDED.bairro, ''), usuarios.bairro),
+                municipio = COALESCE(NULLIF(EXCLUDED.municipio, ''), usuarios.municipio),
+                uf = COALESCE(NULLIF(EXCLUDED.uf, ''), usuarios.uf),
+                cep = COALESCE(NULLIF(EXCLUDED.cep, ''), usuarios.cep),
+                email_contato = COALESCE(NULLIF(EXCLUDED.email_contato, ''), usuarios.email_contato),
+                telefone = COALESCE(NULLIF(EXCLUDED.telefone, ''), usuarios.telefone),
+                codigo_municipio = COALESCE(NULLIF(EXCLUDED.codigo_municipio, ''), usuarios.codigo_municipio),
                 is_active = true,
                 is_admin = EXCLUDED.is_admin
             """,
@@ -95,18 +150,18 @@ def main() -> int:
                 u["inscricao_municipal"] or None,
                 u["razao_social"] or None,
                 u["nome_fantasia"] or None,
+                *[u.get(c) or None for c in ADDR_COLS],
                 u["is_admin"],
             ),
         )
-        print(f"OK usuário={u['username']} cnpj={u['cnpj'] or '(vazio — configurar)'} senha=medico")
+        print(
+            f"OK usuário={u['username']} cnpj={u['cnpj'] or '(vazio)'} "
+            f"municipio={u.get('municipio') or '(configurar)'} senha=medico"
+        )
 
-    # Mantém admin legado alinhado à senha medico (opcional, se existir)
     pw_admin = bcrypt.hashpw(b"medico", bcrypt.gensalt()).decode()
     cur.execute(
-        """
-        UPDATE usuarios SET password_hash = %s, is_active = true
-        WHERE username = 'admin'
-        """,
+        "UPDATE usuarios SET password_hash = %s, is_active = true WHERE username = 'admin'",
         (pw_admin,),
     )
     if cur.rowcount:

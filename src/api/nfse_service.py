@@ -77,9 +77,10 @@ class NFSeService:
         CNPJ/IM/razão vêm do perfil do usuário quando multiusuário.
         """
         try:
-            from src.users.profile import SHARED_PRESTADOR_BASE
+            from src.users.profile import DEFAULT_PRESTADOR_ADDRESS
             from src.utils.runtime_config import PRESTADOR_OFICIAL
-            base = dict(SHARED_PRESTADOR_BASE)
+            base = dict(DEFAULT_PRESTADOR_ADDRESS)
+            base["email"] = base.pop("email_contato", base.get("email", ""))
             base.update(PRESTADOR_OFICIAL)
             return base
         except Exception:

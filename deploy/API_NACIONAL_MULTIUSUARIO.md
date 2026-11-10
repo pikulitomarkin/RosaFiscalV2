@@ -2,8 +2,8 @@
 
 ## O que mudou
 - Emissão padrão via **API Nacional NFS-e (Sefin)** com **certificado A1 (mTLS)** por usuário.
-- Cidade, endereço e imposto são **compartilhados**.
-- Por usuário mudam: **CNPJ**, inscrição municipal, razão social e **PFX + senha do certificado**.
+- Imposto/serviço padrão é **compartilhado**.
+- Por usuário mudam: **CNPJ**, **endereço**, inscrição municipal, razão social e **PFX + senha do certificado**.
 
 ## Usuários seed
 | Usuário    | Senha login | CNPJ              | Certificado                          |

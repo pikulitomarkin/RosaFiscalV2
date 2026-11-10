@@ -1,6 +1,7 @@
 """Perfil multiusuário (CNPJ + certificado A1 por usuário)."""
 
 from .profile import (
+    DEFAULT_PRESTADOR_ADDRESS,
     SHARED_PRESTADOR_BASE,
     UserProfile,
     cert_pronto,
@@ -13,6 +14,7 @@ from .profile import (
 )
 
 __all__ = [
+    "DEFAULT_PRESTADOR_ADDRESS",
     "SHARED_PRESTADOR_BASE",
     "UserProfile",
     "cert_pronto",

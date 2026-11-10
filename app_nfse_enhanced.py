@@ -1744,7 +1744,7 @@ def show_xml_content(xml_path):
 def render_settings():
     """Renderiza página de configurações (API nacional — CNPJ + A1 por usuário)."""
     from src.users.profile import (
-        SHARED_PRESTADOR_BASE,
+        DEFAULT_PRESTADOR_ADDRESS,
         UserProfile,
         cert_pronto,
         get_user_profile,
@@ -1768,11 +1768,12 @@ def render_settings():
 
     st.markdown("### 🏥 Prestador deste usuário")
     st.info(
-        "Município, endereço e imposto são **compartilhados**. "
-        "Só mudam **CNPJ**, inscrição municipal, razão social e **certificado A1**."
+        "Cada usuário tem **CNPJ**, **endereço** e **certificado A1** próprios. "
+        "Só a configuração de imposto/serviço fica compartilhada."
     )
 
     with st.form("perfil_fiscal_form"):
+        st.markdown("#### Empresa")
         col1, col2 = st.columns(2)
         with col1:
             cnpj_in = st.text_input("CNPJ *", value=profile.cnpj or "", placeholder="somente números")
@@ -1780,14 +1781,56 @@ def render_settings():
             razao_in = st.text_input("Razão social", value=profile.razao_social or "")
             fantasia_in = st.text_input("Nome fantasia", value=profile.nome_fantasia or "")
         with col2:
-            st.markdown(f"**Município:** {SHARED_PRESTADOR_BASE['municipio']} - {SHARED_PRESTADOR_BASE['uf']}")
-            st.markdown(f"**IBGE:** `{SHARED_PRESTADOR_BASE.get('codigo_municipio', '')}`")
-            st.markdown(
-                f"**Endereço:** {SHARED_PRESTADOR_BASE['logradouro']}, "
-                f"{SHARED_PRESTADOR_BASE['numero']} — {SHARED_PRESTADOR_BASE['bairro']}"
+            email_c_in = st.text_input(
+                "E-mail contato",
+                value=profile.email_contato or DEFAULT_PRESTADOR_ADDRESS["email_contato"],
             )
-            st.markdown(f"**CEP:** {SHARED_PRESTADOR_BASE['cep']}")
-        salvar_perfil = st.form_submit_button("💾 Salvar CNPJ / empresa", type="primary", use_container_width=True)
+            tel_in = st.text_input(
+                "Telefone",
+                value=profile.telefone or DEFAULT_PRESTADOR_ADDRESS["telefone"],
+            )
+            ibge_in = st.text_input(
+                "Código IBGE município",
+                value=profile.codigo_municipio or DEFAULT_PRESTADOR_ADDRESS["codigo_municipio"],
+            )
+
+        st.markdown("#### Endereço do prestador")
+        a1, a2, a3 = st.columns(3)
+        with a1:
+            log_in = st.text_input(
+                "Logradouro",
+                value=profile.logradouro or DEFAULT_PRESTADOR_ADDRESS["logradouro"],
+            )
+            bairro_in = st.text_input(
+                "Bairro",
+                value=profile.bairro or DEFAULT_PRESTADOR_ADDRESS["bairro"],
+            )
+        with a2:
+            num_in = st.text_input(
+                "Número",
+                value=profile.numero or DEFAULT_PRESTADOR_ADDRESS["numero"],
+            )
+            mun_in = st.text_input(
+                "Município",
+                value=profile.municipio or DEFAULT_PRESTADOR_ADDRESS["municipio"],
+            )
+        with a3:
+            comp_in = st.text_input("Complemento", value=profile.complemento or "")
+            uf_in = st.text_input(
+                "UF",
+                value=profile.uf or DEFAULT_PRESTADOR_ADDRESS["uf"],
+                max_chars=2,
+            )
+            cep_in = st.text_input(
+                "CEP",
+                value=profile.cep or DEFAULT_PRESTADOR_ADDRESS["cep"],
+            )
+
+        salvar_perfil = st.form_submit_button(
+            "💾 Salvar CNPJ / endereço / empresa",
+            type="primary",
+            use_container_width=True,
+        )
 
     if salvar_perfil:
         try:
@@ -1795,8 +1838,18 @@ def render_settings():
             profile.inscricao_municipal = im_in
             profile.razao_social = razao_in
             profile.nome_fantasia = fantasia_in
+            profile.email_contato = email_c_in
+            profile.telefone = tel_in
+            profile.codigo_municipio = ibge_in
+            profile.logradouro = log_in
+            profile.numero = num_in
+            profile.complemento = comp_in
+            profile.bairro = bairro_in
+            profile.municipio = mun_in
+            profile.uf = uf_in
+            profile.cep = cep_in
             save_user_profile(profile)
-            st.success("✅ Perfil fiscal salvo.")
+            st.success("✅ Perfil fiscal e endereço salvos.")
             st.rerun()
         except Exception as e:
             app_logger.exception("Falha ao salvar perfil fiscal")
