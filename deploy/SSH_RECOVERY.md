@@ -1,57 +1,53 @@
 # Recuperação SSH VPS RosaFiscal
 
 ## O que aconteceu (evidência)
-O Cloud Agent da migração (`cursor/migracao-vps-ddd1`, ~2026-11-05) **não desabilitou** login por senha.
+O Cloud Agent da migração **não desabilitou** login por senha.
 
-Confirmado na VPS na época (`sshd -T`):
+Confirmado na VPS (`sshd -T`):
 - `PasswordAuthentication yes`
 - `PermitRootLogin yes`
 
-O que mudou e “travou” o acesso de agentes novos:
+O que travou o acesso de agentes novos:
 
-1. **Senha root rotacionada** (`chpasswd` + `openssl rand`) → valor só em  
-   `/root/rosafiscal_rotated_credentials.txt` (chmod 600) **dentro da VPS**.
-2. **Chave SSH do agente** instalada em `/root/.ssh/authorized_keys`  
-   (`cursor-agent-rosafiscal-20261105`, fingerprint `SHA256:Sd7sCsZK…`).
-3. A **chave privada** ficou só em `~/.ssh/rosafiscal_vps` do VM efêmero do agente  
-   e **não** foi salva em secret Cursor / Git / artifact. No reboot do ambiente Cloud Agent, essa chave sumiu.
+1. **Senha root rotacionada** → só em `/root/rosafiscal_rotated_credentials.txt` na VPS.
+2. **Chave SSH do agente** em `/root/.ssh/authorized_keys` (`cursor-agent-rosafiscal-20261105`).
+3. A **chave privada** ficou no VM efêmero do Cloud Agent e sumiu no reboot do ambiente.
 4. A senha antiga do painel (16 chars) **não funciona mais**.
 
-Porta 22 continua aberta; autenticações oferecidas: `publickey,password`.
+Porta 22 aberta; métodos: `publickey,password`.
 
-## Caminhos de acesso (ordem)
+## Caminho recomendado: Terminal do ICP (iContainer)
 
-### 1) Console / VNC do provedor iContainer (recomendado)
-No painel de hospedagem que criou a VPS `vps12436` / `184.107.179.79` (não confundir com o app Streamlit):
+O painel de controle da VPS (não o app Streamlit) está em:
 
-1. Abra **Console / VNC / KVM / Recovery**.
-2. Login como `root` (use “reset root password” do painel se o console não aceitar a senha).
-3. Leia as credenciais rotacionadas:
-   ```bash
-   cat /root/rosafiscal_rotated_credentials.txt
-   ```
-4. Autorize o Cloud Agent atual (pubkey):
-   ```bash
-   mkdir -p /root/.ssh && chmod 700 /root/.ssh
-   echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAIzVVbceUBZMfbnyC/L08wPIaEsVtJdib/05SryzN7O cursor-cloud-rosafiscal-20261110' >> /root/.ssh/authorized_keys
-   chmod 600 /root/.ssh/authorized_keys
-   ```
-5. (Opcional) Atualize o secret Cursor `SSHPASS` com `ROOT_PASSWORD` do arquivo.
-6. Avise o agente → `./deploy/scripts/agent_deploy_vps.sh`
+**https://vps12436.panel.icontainer.site:2090/admin**
 
-### 2) Reset de senha root no painel do provedor
-Se o console não tiver a senha atual: use a ação **Reset Root Password** do iContainer e coloque o novo valor no secret `SSHPASS`.
+(credenciais do e-mail “Setup and Usage Instructions” / portal do cliente iContainer)
 
-### 3) Chave antiga do agente (só se ainda existir no cofre)
-Fingerprint da chave que está em `authorized_keys` da VPS:  
-`SHA256:Sd7sCsZK4O0C+UuZutiH1YoagxWICULnJsR8vJyBHgU`  
-Se alguém salvou essa privada como `ROSAFISCAL_SSH_KEY`, restaure em `~/.ssh/rosafiscal_vps`.
+1. Login no ICP.
+2. Menu **Server → Terminal**.
+3. No terminal web (já como root do host), rode:
+
+```bash
+cat /root/rosafiscal_rotated_credentials.txt
+mkdir -p /root/.ssh && chmod 700 /root/.ssh
+echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAIzVVbceUBZMfbnyC/L08wPIaEsVtJdib/05SryzN7O cursor-cloud-rosafiscal-20261110' >> /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
+```
+
+4. Avise neste chat. O agente valida SSH e roda `./deploy/scripts/agent_deploy_vps.sh`.
+
+Wiki iContainer: https://wiki.icontainer.run/en/Acessando-terminal-ssh
+
+## Alternativas
+- **Reset Root Password** no ICP + secret Cursor `SSHPASS` com a nova senha.
+- Restaurar a chave privada antiga (`SHA256:Sd7sCsZK…`) como `ROSAFISCAL_SSH_KEY`, se ainda existir no cofre.
 
 ## O que NÃO funciona
-- Secret `SSHPASS` = senha antiga do painel (já invalidada).
-- Chave gerada neste Cloud Agent (`…20261110`) — **ainda não** está em `authorized_keys`.
-- Brute-force SSH (fail2ban ativo).
+- `SSHPASS` = senha antiga do painel.
+- Chave `…20261110` deste agente **antes** de ser adicionada ao `authorized_keys`.
+- Brute-force SSH (fail2ban).
 
-## App ainda no ar (sem SSH)
-- https://vps12436.panel.icontainer.site/
+## App (sem SSH)
+- https://vps12436.panel.icontainer.site/  (Streamlit)
 - http://184.107.179.79:8501

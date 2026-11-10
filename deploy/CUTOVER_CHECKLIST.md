@@ -22,21 +22,23 @@ Atualizado com evidência na VPS `184.107.179.79` e migração para **API Nacion
 | Desligar Railway | só após emissão validada | PENDENTE |
 
 ## Bloqueio atual (ops)
-Acesso SSH do Cloud Agent à VPS: senha root antiga **não funciona** (foi rotacionada) e a chave `rosafiscal_vps` do agente anterior **não está neste VM**.
+Acesso SSH do Cloud Agent: senha root antiga inválida; chave privada da migração perdida no VM efêmero.
+Porta 22 pode estar em **fail2ban** para o IP do agent após tentativas falhas.
 
-Instale a chave pública abaixo em `/root/.ssh/authorized_keys` (console iContainer / KVM) e avise:
+**Recuperação via ICP (confirmado HTTP 200):**  
+https://vps12436.panel.icontainer.site:2090/admin → **Server → Terminal**
 
-```
-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAIzVVbceUBZMfbnyC/L08wPIaEsVtJdib/05SryzN7O cursor-cloud-rosafiscal-20261110
-```
-
-Ou adicione secret Cursor `SSHPASS` (senha root atual) / `ROSAFISCAL_SSH_KEY` (chave privada).
-
-Depois:
 ```bash
-./deploy/scripts/agent_deploy_vps.sh
-# na VPS: seed + PFX por usuário em Configurações
+cat /root/rosafiscal_rotated_credentials.txt
+mkdir -p /root/.ssh && chmod 700 /root/.ssh
+echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAIzVVbceUBZMfbnyC/L08wPIaEsVtJdib/05SryzN7O cursor-cloud-rosafiscal-20261110' >> /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
+# se fail2ban bloqueou o agent:
+fail2ban-client set sshd unbanip --all 2>/dev/null || true
 ```
+
+Guia: `deploy/SSH_RECOVERY.md`  
+Depois: `./deploy/scripts/agent_deploy_vps.sh`
 
 ## Nota sobre IPM
 O fluxo padrão passou a ser **Sefin (API nacional)**. IPM permanece legado (`emission_backend=ipm`). `IPM_SENHA` / auth 401 **não** bloqueiam o cutover sefin.
