@@ -202,6 +202,19 @@ class NFSeRequest(BaseModel):
     natureza_operacao: int = Field(1, ge=1, le=6, description="1=Tributação no município")
     regime_especial_tributacao: Optional[int] = Field(None, description="Regime especial")
     optante_simples_nacional: bool = Field(False, description="Optante pelo Simples Nacional")
+    mei: bool = Field(False, description="MEI (opSimpNac=2). ME/EPP usa opSimpNac=3")
+    op_simp_nac: Optional[int] = Field(
+        None,
+        ge=1,
+        le=4,
+        description="Override opSimpNac: 1=Não optante, 2=MEI, 3=ME/EPP, 4=Pendente",
+    )
+    reg_ap_trib_sn: Optional[int] = Field(
+        None,
+        ge=1,
+        le=3,
+        description="Regime apuração SN (obrigatório se opSimpNac=3)",
+    )
     incentivador_cultural: bool = Field(False, description="Incentivador cultural")
     
     # Controle interno

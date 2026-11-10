@@ -720,6 +720,8 @@ def render_overview():
 
 def render_single_emission():
     """Renderiza página de emissão individual."""
+    from src.utils.runtime_config import get_shared_tax_config
+
     st.title("📤 Emissão Individual de NFS-e")
     st.markdown("Emita uma NFS-e única com dados preenchidos manualmente")
     st.markdown("---")
@@ -865,12 +867,19 @@ def render_single_emission():
                     "cep": (tomador_cep or "").replace("-", "") or "00000000",
                     "logradouro": tomador_logradouro or "NAO INFORMADO",
                 }
+                _tax = get_shared_tax_config()
                 config_servico = {
                     "valor": valor_servico,
                     "aliquota_iss": aliquota_iss,
                     "item_lista": item_lista.replace(".", ""),
                     "descricao": hash_paciente if hash_paciente and hash_paciente.strip() else descricao_servico,
                     "simples_nacional": simples_nacional,
+                    "mei": bool(_tax.get("mei", False)) if simples_nacional else False,
+                    "op_simp_nac": (
+                        1 if not simples_nacional
+                        else int(_tax.get("op_simp_nac") or (2 if _tax.get("mei") else 3))
+                    ),
+                    "reg_ap_trib_sn": int(_tax.get("reg_ap_trib_sn") or 1),
                 }
 
                 with st.spinner("⏳ Emitindo NFS-e via API Nacional (Sefin)... Por favor aguarde..."):
@@ -947,12 +956,15 @@ def _processar_emissao_lote(
     item_lista,
     descricao_servico,
     discriminacao,
+    simples_nacional=True,
 ):
     """Processa emissão em lote FORA do st.form para não interromper o Streamlit."""
     from src.users.profile import cert_pronto, get_user_profile
+    from src.utils.runtime_config import get_shared_tax_config
 
     username = st.session_state.username or ""
     profile = get_user_profile(username)
+    _tax = get_shared_tax_config()
     if not profile or not cert_pronto(profile):
         st.error(
             "❌ Certificado A1 / CNPJ não configurados. Vá em **⚙️ Configurações**, "
@@ -1031,12 +1043,18 @@ def _processar_emissao_lote(
                 "cep": (record.get("cep") or "").replace("-", "") or "00000000",
                 "logradouro": record.get("logradouro", "NAO INFORMADO"),
             }
+            _sn = bool(simples_nacional)
             _cfg = {
                 "valor": float(valor_nota),
                 "aliquota_iss": aliquota_iss,
                 "item_lista": (item_lista or "40303").replace(".", ""),
                 "descricao": descricao_com_hash,
-                "simples_nacional": True,
+                "simples_nacional": _sn,
+                "mei": bool(_tax.get("mei", False)) if _sn else False,
+                "op_simp_nac": (
+                    1 if not _sn else int(_tax.get("op_simp_nac") or (2 if _tax.get("mei") else 3))
+                ),
+                "reg_ap_trib_sn": int(_tax.get("reg_ap_trib_sn") or 1),
             }
             resultado = _emitir_sefin_registro(_reg, _cfg)
             app_logger.info(f"[{idx+1}] Emissão concluída: {resultado.get('sucesso', False)}")
@@ -1350,6 +1368,7 @@ def render_batch_emission():
                                 item_lista=item_lista,
                                 descricao_servico=descricao_servico,
                                 discriminacao=discriminacao,
+                                simples_nacional=simples_nacional,
                             )
 
                 else:
@@ -1921,10 +1940,35 @@ def render_settings():
         with t1:
             aliq = st.number_input("Alíquota ISS (%)", min_value=0.0, max_value=100.0, value=float(tax["aliquota_iss"]), step=0.01)
             item = st.text_input("Código serviço", value=tax["item_lista"])
-        with t2:
             desc = st.text_input("Descrição padrão", value=tax["descricao"])
             nbs = st.text_input("NBS", value=tax["nbs"])
+        with t2:
             sn = st.checkbox("Optante Simples Nacional", value=bool(tax["simples_nacional"]))
+            mei = st.checkbox(
+                "MEI (opSimpNac=2)",
+                value=bool(tax.get("mei", False)),
+                help="Marque só se o CNPJ for MEI. ME/EPP (Nathalia) deve ficar desmarcado → opSimpNac=3.",
+            )
+            op_labels = {
+                1: "1 — Não optante",
+                2: "2 — MEI",
+                3: "3 — ME/EPP",
+                4: "4 — Optante pendente",
+            }
+            current_op = int(tax.get("op_simp_nac") or (2 if mei else (3 if sn else 1)))
+            op_choice = st.selectbox(
+                "opSimpNac (Sefin)",
+                options=[1, 2, 3, 4],
+                index=[1, 2, 3, 4].index(current_op if current_op in (1, 2, 3, 4) else 3),
+                format_func=lambda v: op_labels[v],
+                help="Enum oficial: 2=MEI, 3=ME/EPP. Invertê-los gera E0160.",
+            )
+            reg_ap = st.selectbox(
+                "regApTribSN (só ME/EPP)",
+                options=[1, 2, 3],
+                index=[1, 2, 3].index(int(tax.get("reg_ap_trib_sn") or 1)),
+                help="1=federais+municipal pelo SN (padrão).",
+            )
         salvar_tax = st.form_submit_button("💾 Salvar imposto compartilhado", use_container_width=True)
     if salvar_tax:
         save_shared_tax_config(
@@ -1933,6 +1977,9 @@ def render_settings():
             descricao=desc,
             nbs=nbs,
             simples_nacional=sn,
+            mei=mei,
+            op_simp_nac=op_choice,
+            reg_ap_trib_sn=reg_ap,
         )
         st.success("✅ Configuração de imposto salva (vale para todos os usuários).")
         st.rerun()

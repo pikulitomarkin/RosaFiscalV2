@@ -133,6 +133,9 @@ class NFSeXMLGenerator:
             prest_elem,
             nfse_request.prestador,
             optante_simples_nacional=bool(nfse_request.optante_simples_nacional),
+            mei=bool(getattr(nfse_request, "mei", False)),
+            op_simp_nac=getattr(nfse_request, "op_simp_nac", None),
+            reg_ap_trib_sn=getattr(nfse_request, "reg_ap_trib_sn", None),
         )
         
         # 10. toma - Dados do Tomador (opcional)
@@ -162,23 +165,53 @@ class NFSeXMLGenerator:
         *,
         optante_simples_nacional: bool = True,
         mei: bool = False,
+        op_simp_nac: Optional[int] = None,
+        reg_ap_trib_sn: Optional[int] = None,
     ):
-        """Adiciona dados do prestador conforme XSD v1.01."""
+        """Adiciona dados do prestador conforme XSD v1.01 / NT 009.
+
+        opSimpNac (oficial Sefin/ADN):
+          1=Não Optante, 2=MEI, 3=ME/EPP, 4=Optante Pendente
+        regApTribSN (obrigatório só para ME/EPP = 3):
+          1=tributos federais+municipal pelo SN
+          2=federais pelo SN + ISSQN legislação municipal
+          3=federais+municipal pela legislação de cada tributo
+        """
         
         # 1. CNPJ
         SubElement(parent, "CNPJ").text = prestador.cnpj
         
         # 5. regTrib - Regimes Tributários (obrigatório)
-        # opSimpNac: 1=Não optante, 2=Optante SN, 3=MEI
         reg_trib = SubElement(parent, "regTrib")
-        if mei:
-            SubElement(reg_trib, "opSimpNac").text = "3"
+
+        if op_simp_nac is not None:
+            try:
+                code = int(op_simp_nac)
+            except (TypeError, ValueError):
+                code = 1
+            if code not in (1, 2, 3, 4):
+                code = 1
+        elif mei:
+            code = 2
         elif optante_simples_nacional:
-            SubElement(reg_trib, "opSimpNac").text = "2"
-            # 1=Federação/Estadual/Municipal, 2=ISS municipal (comum para serviços)
-            SubElement(reg_trib, "regApTribSN").text = "1"
+            code = 3  # ME/EPP (NÃO confundir com MEI=2)
         else:
-            SubElement(reg_trib, "opSimpNac").text = "1"
+            code = 1
+
+        SubElement(reg_trib, "opSimpNac").text = str(code)
+
+        # E0166: regApTribSN obrigatório para ME/EPP (3). E0162: proibido para 1 ou 2.
+        if code == 3:
+            reg_ap = 1
+            if reg_ap_trib_sn is not None:
+                try:
+                    reg_ap = int(reg_ap_trib_sn)
+                except (TypeError, ValueError):
+                    reg_ap = 1
+            if reg_ap not in (1, 2, 3):
+                reg_ap = 1
+            SubElement(reg_trib, "regApTribSN").text = str(reg_ap)
+
         SubElement(reg_trib, "regEspTrib").text = "0"  # 0=Nenhum
     
     def _add_tomador_v101(self, parent: Element, tomador: TomadorServico):

@@ -528,6 +528,29 @@ class NFSeService:
             discriminacao=config_servico.get('discriminacao', None)
         )
         
+        # Regime SN: 1=Não optante, 2=MEI, 3=ME/EPP (oficial Sefin — não inverter!)
+        mei = bool(config_servico.get("mei", False))
+        simples = bool(config_servico.get("simples_nacional", False))
+        op_raw = config_servico.get("op_simp_nac")
+        reg_raw = config_servico.get("reg_ap_trib_sn")
+        try:
+            op_simp = int(op_raw) if op_raw is not None and str(op_raw).strip() != "" else None
+        except (TypeError, ValueError):
+            op_simp = None
+        try:
+            reg_ap = int(reg_raw) if reg_raw is not None and str(reg_raw).strip() != "" else None
+        except (TypeError, ValueError):
+            reg_ap = None
+        if op_simp is None:
+            if mei:
+                op_simp = 2
+            elif simples:
+                op_simp = 3
+            else:
+                op_simp = 1
+        if op_simp == 3 and reg_ap is None:
+            reg_ap = 1
+
         # Monta a requisição completa
         nfse = NFSeRequest(
             data_emissao=datetime.now(),
@@ -537,7 +560,10 @@ class NFSeService:
             servico=servico,
             hash_transacao=registro['hash'],
             natureza_operacao=1,
-            optante_simples_nacional=config_servico.get('simples_nacional', False)
+            optante_simples_nacional=op_simp in (2, 3, 4),
+            mei=(op_simp == 2),
+            op_simp_nac=op_simp,
+            reg_ap_trib_sn=reg_ap if op_simp == 3 else None,
         )
         
         return nfse
