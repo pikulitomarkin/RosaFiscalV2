@@ -88,11 +88,66 @@ c_col=$(docker compose exec -T db psql -U nfse -d nfse -Atc \
   "select count(*) from information_schema.columns where table_name='usuarios' and column_name in ('cnpj','logradouro')" 2>/dev/null || echo 0)
 [[ "${c_col}" -ge 2 ]] && sefin_cols_ok=true || true
 
+# Cert A1 por usuário (volume appdata → /app/data/certs/{user}/)
+sefin_cert_ok=false
+sefin_cert_count=0
+sefin_cert_count=$(
+  docker compose exec -T app python - <<"PY" 2>/dev/null || echo 0
+from pathlib import Path
+n = 0
+root = Path("/app/data/certs")
+if root.is_dir():
+    for d in root.iterdir():
+        if d.is_dir() and (d / "cert.pem").is_file() and (d / "key.pem").is_file():
+            if (d / "cert.pem").stat().st_size > 0 and (d / "key.pem").stat().st_size > 0:
+                n += 1
+print(n)
+PY
+)
+sefin_cert_count=$(echo "$sefin_cert_count" | tr -d '\r' | tail -n1)
+[[ "${sefin_cert_count}" =~ ^[0-9]+$ ]] || sefin_cert_count=0
+[[ "${sefin_cert_count}" -ge 1 ]] && sefin_cert_ok=true || true
+
+# IPM legado: Santa Rosa responde 00378 (Emissor Nacional) — não serve para emissão
+ipm_emissor_nacional=false
+if $senha_ok; then
+  if docker compose exec -T app python - <<"PY" >/dev/null 2>&1
+import asyncio
+from src.api.ipm_soap_client import IPMSoapClient
+from src.utils.rps_xml_generator import RPSXMLGenerator
+from src.api.nfse_service import NFSeService
+
+async def probe():
+    prestador = NFSeService()._load_default_prestador()
+    gen = RPSXMLGenerator(ambiente_teste=True)
+    xml = gen.gerar_enviar_lote_rps_sincrono(
+        cnpj_prestador=prestador["cnpj"],
+        inscricao_municipal=prestador["inscricao_municipal"],
+        numero_lote=1, numero_rps=1, serie_rps="A",
+        cpf_tomador="00000000191", nome_tomador="PROBE",
+        descricao="PROBE", valor=1.0, aliquota_iss=2.01,
+        codigo_servico="40303", nbs="1.2301.21.00",
+        bairro_tomador="CENTRO", cep_tomador="98780000",
+        logradouro_tomador="RUA",
+    )
+    r = await IPMSoapClient().enviar_lote_rps_sincrono(xml)
+    msgs = " ".join(str(x) for x in (r.get("mensagens") or r.get("erros") or []))
+    raise SystemExit(0 if "00378" in msgs or "Emissor Nacional" in msgs else 1)
+
+asyncio.run(probe())
+PY
+  then ipm_emissor_nacional=true; fi
+fi
+
 ready=false
+emission_ready=false
 blocker=null
 if [[ "$backend" == "sefin" ]]; then
   if $app_up && $http_ok && $https_ok && [[ "${db_emissoes}" -gt 0 ]] && [[ "${db_usuarios}" -gt 0 ]] && $json_ok && $sefin_users_ok && $sefin_cols_ok; then
     ready=true
+  fi
+  if $ready && $sefin_cert_ok; then
+    emission_ready=true
   fi
   if [[ "$ready" != "true" ]]; then
     if [[ "$sefin_users_ok" != "true" ]]; then
@@ -102,10 +157,15 @@ if [[ "$backend" == "sefin" ]]; then
     else
       blocker='"other"'
     fi
+  elif [[ "$emission_ready" != "true" ]]; then
+    blocker='"SEFIN_A1_PFX"'
   fi
 else
   if $app_up && $http_ok && $https_ok && [[ "${db_emissoes}" -gt 0 ]] && [[ "${db_usuarios}" -gt 0 ]] && $json_ok && $senha_ok && $auth_ok && $ipm_net_ok; then
     ready=true
+  fi
+  if $ready && [[ "$ipm_emissor_nacional" != "true" ]]; then
+    emission_ready=true
   fi
   if [[ "$ready" != "true" ]]; then
     if [[ "$senha_ok" != "true" ]]; then
@@ -115,12 +175,15 @@ else
     else
       blocker='"other"'
     fi
+  elif [[ "$ipm_emissor_nacional" == "true" ]]; then
+    blocker='"IPM_EMISSOR_NACIONAL"'
   fi
 fi
 
 json_out=$(cat <<EOF
 {
   "cutover_ready": $(to_json_bool "$ready"),
+  "emission_ready": $(to_json_bool "$emission_ready"),
   "emission_backend": "${backend}",
   "app_up": $(to_json_bool "$app_up"),
   "http_8501": $(to_json_bool "$http_ok"),
@@ -130,11 +193,14 @@ json_out=$(cat <<EOF
   "json_historico": $(to_json_bool "$json_ok"),
   "sefin_users": $(to_json_bool "$sefin_users_ok"),
   "sefin_schema": $(to_json_bool "$sefin_cols_ok"),
+  "sefin_cert_users": ${sefin_cert_count:-0},
+  "sefin_cert": $(to_json_bool "$sefin_cert_ok"),
   "ipm_senha": $(to_json_bool "$senha_ok"),
   "ipm_auth": $(to_json_bool "$auth_ok"),
   "ipm_auth_http": "${auth_http}",
   "ipm_network": $(to_json_bool "$ipm_net_ok"),
   "ipm_network_http": "${code}",
+  "ipm_emissor_nacional": $(to_json_bool "$ipm_emissor_nacional"),
   "cert_a1_optional": $(to_json_bool "$cert_ok"),
   "blocker": ${blocker},
   "url": "https://vps12436.panel.icontainer.site/",

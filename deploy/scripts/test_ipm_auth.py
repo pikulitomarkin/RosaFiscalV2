@@ -56,8 +56,16 @@ async def main() -> int:
         return 2
 
     ok = bool(result.get("sucesso"))
+    msgs = result.get("mensagens") or result.get("erros") or []
     print("sucesso=", ok)
-    print("mensagens=", result.get("mensagens") or result.get("erros"))
+    print("mensagens=", msgs)
+    joined = " ".join(str(x) for x in msgs)
+    if "00378" in joined or "Emissor Nacional" in joined:
+        print(
+            "INFO: município migrado para Emissor Nacional (Sefin). "
+            "IPM não emite mais — use certificado A1 por usuário."
+        )
+        return 4
     if ok:
         print("OK: credenciais IPM aceitas (modo teste).")
         return 0

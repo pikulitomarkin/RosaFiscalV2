@@ -62,6 +62,13 @@ def ensure_login_users() -> None:
     if not dsn.startswith("postgresql://"):
         return
     try:
+        from src.utils.runtime_config import DATA_DIR
+
+        for name in ("nathalia", "guilherme"):
+            (DATA_DIR / "certs" / name).mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        app_logger.warning(f"ensure_login_users cert dirs: {e}")
+    try:
         conn = psycopg2.connect(dsn)
         conn.autocommit = True
         cur = conn.cursor()
