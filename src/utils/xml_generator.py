@@ -3,6 +3,7 @@ Gerador de XMLs NFS-e no padrão ADN (Ambiente de Disponibilização Nacional).
 """
 import gzip
 import base64
+import re
 from xml.etree.ElementTree import Element, SubElement, tostring
 from datetime import datetime
 from typing import Dict, Any, Optional
@@ -614,6 +615,186 @@ class NFSeXMLGenerator:
         
         return xml
     
+    def gerar_xml_pedido_cancelamento(
+        self,
+        chave_acesso: str,
+        cnpj_autor: str,
+        *,
+        c_motivo: int = 1,
+        x_motivo: str = "Cancelamento de emissao em lote por erro operacional.",
+        n_ped_reg_evento: int = 1,
+    ) -> tuple[str, str]:
+        """
+        Gera XML pedRegEvento de cancelamento (evento e101101) sem assinatura.
+
+        Returns:
+            (xml_string, id_ped_reg) — Id no padrão PRE+chave(50)+101+seq(3)
+        """
+        chave = re.sub(r"\D", "", chave_acesso or "")
+        if len(chave) != 50:
+            raise ValueError(f"chaveAcesso deve ter 50 dígitos (recebido {len(chave)})")
+        cnpj = re.sub(r"\D", "", cnpj_autor or "")
+        if len(cnpj) not in (11, 14):
+            raise ValueError(f"CNPJ/CPF autor inválido: {cnpj_autor!r}")
+        if c_motivo not in (1, 2, 9):
+            raise ValueError("cMotivo deve ser 1 (erro), 2 (serviço não prestado) ou 9 (outros)")
+        motivo = (x_motivo or "").strip()
+        if len(motivo) < 15 or len(motivo) > 255:
+            raise ValueError("xMotivo deve ter entre 15 e 255 caracteres")
+        seq = max(1, min(int(n_ped_reg_evento), 999))
+        id_ped = f"PRE{chave}101{seq:03d}"
+
+        from datetime import timedelta, timezone
+
+        tz_brasilia = timezone(timedelta(hours=-3))
+        now = datetime.now(tz_brasilia) - timedelta(seconds=5)
+        dh = now.strftime("%Y-%m-%dT%H:%M:%S%z")
+        if len(dh) > 19:
+            dh = dh[:-2] + ":" + dh[-2:]
+
+        root = Element("pedRegEvento")
+        root.set("xmlns", self.NAMESPACE)
+        root.set("versao", "1.00")
+
+        inf = SubElement(root, "infPedReg")
+        inf.set("Id", id_ped)
+        SubElement(inf, "tpAmb").text = "2" if self.ambiente.value == "HOMOLOGACAO" else "1"
+        SubElement(inf, "verAplic").text = "1.00"
+        SubElement(inf, "dhEvento").text = dh
+        if len(cnpj) == 11:
+            SubElement(inf, "CPFAutor").text = cnpj
+        else:
+            SubElement(inf, "CNPJAutor").text = cnpj
+        SubElement(inf, "chNFSe").text = chave
+
+        e101101 = SubElement(inf, "e101101")
+        SubElement(e101101, "xDesc").text = "Cancelamento de NFS-e"
+        SubElement(e101101, "cMotivo").text = str(c_motivo)
+        SubElement(e101101, "xMotivo").text = motivo
+
+        xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + tostring(
+            root, encoding="unicode"
+        )
+        return xml, id_ped
+
+    def assinar_xml_por_id(self, xml_string: str, element_id: str) -> str:
+        """
+        Assina XMLDSig referenciando o elemento Id (URI="#Id"), sem prefixo ds:.
+        Usado em pedRegEvento (cancelamento) conforme MOC Sefin.
+        """
+        if not self.cert_path or not self.key_path:
+            raise ValueError(
+                "Certificado e chave privada devem ser configurados para assinar XML."
+            )
+        cert_file = Path(self.cert_path)
+        key_file = Path(self.key_path)
+        if not cert_file.exists():
+            raise FileNotFoundError(f"Certificado não encontrado: {self.cert_path}")
+        if not key_file.exists():
+            raise FileNotFoundError(f"Chave privada não encontrada: {self.key_path}")
+
+        try:
+            import hashlib
+            import base64
+            import re as _re
+            from lxml import etree as _etree
+            from cryptography.hazmat.primitives import hashes, serialization
+            from cryptography.hazmat.primitives.asymmetric import padding
+            from cryptography.hazmat.primitives.serialization import load_pem_private_key
+            from cryptography.x509 import load_pem_x509_certificate
+
+            DSIG_NS = "http://www.w3.org/2000/09/xmldsig#"
+            C14N_ALG = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
+
+            root = _etree.fromstring(xml_string.encode("utf-8"))
+            targets = root.xpath(f'//*[@Id="{element_id}"]')
+            if not targets:
+                raise ValueError(f"Elemento com Id={element_id!r} não encontrado")
+            target = targets[0]
+
+            c14n_bytes = _etree.tostring(target, method="c14n")
+            digest_b64 = base64.b64encode(hashlib.sha256(c14n_bytes).digest()).decode()
+
+            signed_info_elem = _etree.fromstring(
+                (
+                    f'<SignedInfo xmlns="{DSIG_NS}">'
+                    f'<CanonicalizationMethod Algorithm="{C14N_ALG}"/>'
+                    f'<SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>'
+                    f'<Reference URI="#{element_id}">'
+                    f"<Transforms>"
+                    f'<Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>'
+                    f'<Transform Algorithm="{C14N_ALG}"/>'
+                    f"</Transforms>"
+                    f'<DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>'
+                    f"<DigestValue>{digest_b64}</DigestValue>"
+                    f"</Reference>"
+                    f"</SignedInfo>"
+                ).encode("utf-8")
+            )
+
+            signed_info_c14n = _etree.tostring(signed_info_elem, method="c14n")
+            with open(self.key_path, "rb") as f:
+                private_key = load_pem_private_key(f.read(), password=None)
+            sig_b64 = base64.b64encode(
+                private_key.sign(signed_info_c14n, padding.PKCS1v15(), hashes.SHA256())
+            ).decode()
+
+            with open(self.cert_path, "rb") as f:
+                cert = load_pem_x509_certificate(f.read())
+            cert_b64 = base64.b64encode(
+                cert.public_bytes(serialization.Encoding.DER)
+            ).decode()
+
+            sig_elem = _etree.Element(
+                _etree.QName(DSIG_NS, "Signature"), nsmap={None: DSIG_NS}
+            )
+            sig_elem.append(signed_info_elem)
+            sv = _etree.SubElement(sig_elem, _etree.QName(DSIG_NS, "SignatureValue"))
+            sv.text = sig_b64
+            ki = _etree.SubElement(sig_elem, _etree.QName(DSIG_NS, "KeyInfo"))
+            x509d = _etree.SubElement(ki, _etree.QName(DSIG_NS, "X509Data"))
+            x509c = _etree.SubElement(x509d, _etree.QName(DSIG_NS, "X509Certificate"))
+            x509c.text = cert_b64
+
+            # Signature irmã do elemento assinado (action: after)
+            target.addnext(sig_elem)
+            xml_assinado = _etree.tostring(root, encoding="unicode")
+
+            for ns in [DSIG_NS, self.NAMESPACE]:
+                pattern = _re.compile(r'xmlns:(ns\d+|ds)="' + _re.escape(ns) + r'"')
+                m = pattern.search(xml_assinado)
+                if m:
+                    pfx = m.group(1)
+                    xml_assinado = xml_assinado.replace(
+                        f'xmlns:{pfx}="{ns}"', f'xmlns="{ns}"'
+                    )
+                    xml_assinado = _re.sub(f"<{pfx}:", "<", xml_assinado)
+                    xml_assinado = _re.sub(f"</{pfx}:", "</", xml_assinado)
+
+            return '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_assinado
+        except Exception as e:
+            raise RuntimeError(f"Erro ao assinar XML por Id: {e}") from e
+
+    def gerar_pedido_cancelamento_comprimido(
+        self,
+        chave_acesso: str,
+        cnpj_autor: str,
+        *,
+        c_motivo: int = 1,
+        x_motivo: str = "Cancelamento de emissao em lote por erro operacional.",
+        n_ped_reg_evento: int = 1,
+    ) -> tuple[str, str]:
+        """Gera, assina e comprime pedido de cancelamento e101101."""
+        xml, id_ped = self.gerar_xml_pedido_cancelamento(
+            chave_acesso,
+            cnpj_autor,
+            c_motivo=c_motivo,
+            x_motivo=x_motivo,
+            n_ped_reg_evento=n_ped_reg_evento,
+        )
+        xml_assinado = self.assinar_xml_por_id(xml, id_ped)
+        return self.comprimir_e_codificar(xml_assinado), id_ped
+
     def gerar_lote_comprimido_assinado(self, nfse_requests: list[NFSeRequest]) -> list[str]:
         """
         Gera lote de XMLs assinados, comprimidos e codificados.

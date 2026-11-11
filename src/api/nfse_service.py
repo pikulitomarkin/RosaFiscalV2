@@ -602,6 +602,40 @@ class NFSeService:
         
         return nfse
     
+    async def cancelar_nfse(
+        self,
+        chave_acesso: str,
+        *,
+        c_motivo: int = 1,
+        x_motivo: str = "Cancelamento de emissao em lote por erro operacional.",
+        n_ped_reg_evento: int = 1,
+        cnpj_autor: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Cancela NFS-e via evento Sefin e101101 (POST .../nfse/{chave}/eventos).
+
+        Usa o certificado A1 do serviço (mTLS + assinatura do pedRegEvento).
+        """
+        cnpj = re.sub(r"\D", "", cnpj_autor or self.prestador_config.get("cnpj") or "")
+        if not cnpj:
+            raise ValueError("CNPJ do autor do cancelamento não configurado")
+
+        pedido_b64, id_ped = self.xml_generator.gerar_pedido_cancelamento_comprimido(
+            chave_acesso,
+            cnpj,
+            c_motivo=c_motivo,
+            x_motivo=x_motivo,
+            n_ped_reg_evento=n_ped_reg_evento,
+        )
+        app_logger.info(
+            f"Cancelando NFS-e chave={chave_acesso} idPed={id_ped} cnpj={cnpj} motivo={c_motivo}"
+        )
+        resultado = await self.client.registrar_evento(chave_acesso, pedido_b64)
+        resultado = dict(resultado or {})
+        resultado["idPedReg"] = id_ped
+        resultado["chaveAcesso"] = "".join(ch for ch in chave_acesso if ch.isdigit())
+        return resultado
+
     async def consultar_status_api(self) -> bool:
         """
         Verifica se a API está disponível.
