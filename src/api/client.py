@@ -299,3 +299,39 @@ class NFSeAPIClient(AsyncAPIClient):
         except Exception as e:
             app_logger.error(f"Erro ao consultar idDPS {id_limpo}: {e}")
             raise
+
+    async def registrar_evento(
+        self,
+        chave_acesso: str,
+        pedido_registro_evento_xml_gzip_b64: str,
+    ) -> Dict[str, Any]:
+        """
+        Registra evento na NFS-e (cancelamento e101101, substituição, etc.).
+
+        Endpoint: POST /SefinNacional/nfse/{chaveAcesso}/eventos
+        Payload: {"pedidoRegistroEventoXmlGZipB64": "..."}
+        """
+        chave = "".join(ch for ch in (chave_acesso or "") if ch.isdigit())
+        if len(chave) != 50:
+            raise ValueError(f"chaveAcesso inválida ({len(chave)} dígitos)")
+        endpoint = f"/SefinNacional/nfse/{chave}/eventos"
+        payload = {"pedidoRegistroEventoXmlGZipB64": pedido_registro_evento_xml_gzip_b64}
+        try:
+            app_logger.info(f"Registrando evento Sefin para chave {chave}")
+            response = await self.post(endpoint, json=payload)
+            response.raise_for_status()
+            resultado = response.json()
+            app_logger.info(
+                f"Evento registrado chave={chave} versao={resultado.get('versaoAplicativo')}"
+            )
+            return resultado
+        except httpx.HTTPStatusError as e:
+            app_logger.error(f"Erro HTTP ao registrar evento: {e.response.status_code}")
+            try:
+                app_logger.error(f"Detalhes: {e.response.json()}")
+            except Exception:
+                app_logger.error(f"Resposta: {e.response.text[:500]}")
+            raise
+        except Exception as e:
+            app_logger.error(f"Erro ao registrar evento: {e}")
+            raise

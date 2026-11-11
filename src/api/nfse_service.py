@@ -369,7 +369,7 @@ class NFSeService:
                     serie_rps="A",
                     cpf_tomador=re.sub(r"\D", "", registro.get("cpf", "")),
                     nome_tomador=registro.get("nome", ""),
-                    descricao=config_servico.get("descricao", "CONSULTA MEDICA"),
+                    descricao=self._descricao_ipm_com_hash(registro, config_servico),
                     valor=float(config_servico.get("valor", 0)),
                     aliquota_iss=float(config_servico.get("aliquota_iss", 2.01)),
                     codigo_servico=config_servico.get("item_lista", "40303"),
@@ -495,6 +495,25 @@ class NFSeService:
         
         return results
     
+    @staticmethod
+    def _descricao_ipm_com_hash(
+        registro: Dict[str, str],
+        config_servico: Dict[str, Any],
+    ) -> str:
+        """IPM só tem <descritivo>; anexa hash/observação ao texto do serviço."""
+        base = (config_servico.get("descricao") or "CONSULTA MEDICA").strip()
+        hash_tx = (registro.get("hash") or "").strip()
+        discr = (config_servico.get("discriminacao") or "").strip()
+        extras: list[str] = []
+        if hash_tx and hash_tx not in base and hash_tx not in discr:
+            extras.append(f"Hash do Paciente: {hash_tx}")
+        if discr and discr not in base:
+            extras.append(discr)
+        if not extras:
+            return base
+        # IPM descritivo aceita texto corrido; evita \n problemático em alguns parsers
+        return f"{base} | {' | '.join(extras)}"
+
     def _build_nfse_request(
         self,
         registro: Dict[str, str],
@@ -519,13 +538,22 @@ class NFSeService:
             nome=registro['nome']
         )
         
-        # Serviço
+        # Serviço + observação (xInfComp): hash do paciente / discriminação adicional
+        hash_tx = (registro.get("hash") or "").strip()
+        discr = (config_servico.get("discriminacao") or "").strip() or None
+        descricao = (config_servico.get("descricao") or "").strip() or "Prestação de serviços"
+        # Garante descrição ≥ 10 chars (schema) mesmo se UI mandar só o hash curto
+        if len(descricao) < 10 and hash_tx:
+            descricao = hash_tx if len(hash_tx) >= 10 else f"Servico {hash_tx}"
+        elif len(descricao) < 10:
+            descricao = "Prestação de serviços"
+
         servico = Servico(
-            descricao=config_servico.get('descricao', 'Prestação de serviços'),
+            descricao=descricao,
             valor_servico=Decimal(str(config_servico.get('valor', 100.00))),
             aliquota_iss=Decimal(str(config_servico.get('aliquota_iss', 2.0))),
             item_lista_servico=config_servico.get('item_lista', '1.09'),
-            discriminacao=config_servico.get('discriminacao', None)
+            discriminacao=discr,
         )
         
         # Regime SN: 1=Não optante, 2=MEI, 3=ME/EPP (oficial Sefin — não inverter!)
@@ -551,6 +579,11 @@ class NFSeService:
         if op_simp == 3 and reg_ap is None:
             reg_ap = 1
 
+        # outras_informacoes reforça o hash na observação (xml_generator → xInfComp)
+        outras = None
+        if hash_tx and hash_tx.upper() not in ("N/A", "NA", "-"):
+            outras = f"Hash do Paciente: {hash_tx}"
+
         # Monta a requisição completa
         nfse = NFSeRequest(
             data_emissao=datetime.now(),
@@ -558,7 +591,8 @@ class NFSeService:
             prestador=prestador,
             tomador=tomador,
             servico=servico,
-            hash_transacao=registro['hash'],
+            hash_transacao=hash_tx or None,
+            outras_informacoes=outras,
             natureza_operacao=1,
             optante_simples_nacional=op_simp in (2, 3, 4),
             mei=(op_simp == 2),
@@ -568,6 +602,42 @@ class NFSeService:
         
         return nfse
     
+    async def cancelar_nfse(
+        self,
+        chave_acesso: str,
+        *,
+        c_motivo: int = 1,
+        x_motivo: str = "Cancelamento de emissao em lote por erro operacional.",
+        n_ped_reg_evento: int = 1,
+        cnpj_autor: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Cancela NFS-e via evento Sefin e101101 (POST .../nfse/{chave}/eventos).
+
+        Usa o certificado A1 do serviço (mTLS + assinatura do pedRegEvento).
+        Tenta assinatura por Id; em E0714 refaz com URI="" (mesmo padrão da DPS).
+        """
+        cnpj = re.sub(r"\D", "", cnpj_autor or self.prestador_config.get("cnpj") or "")
+        if not cnpj:
+            raise ValueError("CNPJ do autor do cancelamento não configurado")
+
+        pedido_b64, id_ped = self.xml_generator.gerar_pedido_cancelamento_comprimido(
+            chave_acesso,
+            cnpj,
+            c_motivo=c_motivo,
+            x_motivo=x_motivo,
+            n_ped_reg_evento=n_ped_reg_evento,
+            assinar_por_id=False,
+        )
+        app_logger.info(
+            f"Cancelando NFS-e chave={chave_acesso} idPed={id_ped} cnpj={cnpj} motivo={c_motivo}"
+        )
+        resultado = await self.client.registrar_evento(chave_acesso, pedido_b64)
+        resultado = dict(resultado or {})
+        resultado["idPedReg"] = id_ped
+        resultado["chaveAcesso"] = "".join(ch for ch in chave_acesso if ch.isdigit())
+        return resultado
+
     async def consultar_status_api(self) -> bool:
         """
         Verifica se a API está disponível.
