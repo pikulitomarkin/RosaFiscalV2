@@ -68,6 +68,9 @@ async def init_database():
                 "ALTER TABLE nfse_emissoes ALTER COLUMN protocolo TYPE VARCHAR(128)",
                 "ALTER TABLE nfse_emissoes ALTER COLUMN cpf_tomador TYPE VARCHAR(14)",
                 "ALTER TABLE nfse_emissoes ALTER COLUMN url_nfse TYPE VARCHAR(1000)",
+                "ALTER TABLE nfse_emissoes ADD COLUMN IF NOT EXISTS cnpj_prestador VARCHAR(14)",
+                "CREATE INDEX IF NOT EXISTS idx_nfse_emissoes_usuario ON nfse_emissoes (usuario)",
+                "CREATE INDEX IF NOT EXISTS idx_nfse_emissoes_usuario_status ON nfse_emissoes (usuario, status)",
                 "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cnpj VARCHAR(14)",
                 "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS inscricao_municipal VARCHAR(30)",
                 "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS razao_social VARCHAR(200)",
@@ -83,6 +86,7 @@ async def init_database():
                 "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email_contato VARCHAR(100)",
                 "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefone VARCHAR(20)",
                 "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS codigo_municipio VARCHAR(7)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS valor_padrao_lote NUMERIC(10, 2) DEFAULT 0",
             ]
             for stmt in alters:
                 try:

@@ -40,9 +40,10 @@ class NFSeEmissao(Base):
     created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=func.now())
     
-    # Metadata
+    # Metadata / multi-tenant
     url_nfse = Column(String(1000))
-    usuario = Column(String(50))
+    usuario = Column(String(50), index=True)  # username do login (isolamento)
+    cnpj_prestador = Column(String(14), index=True)  # CNPJ do emitente no momento da emissão
     
     def __repr__(self):
         return f"<NFSeEmissao(id={self.id}, hash={self.hash_transacao[:8]}..., status={self.status})>"
@@ -115,6 +116,8 @@ class Usuario(Base):
     email_contato = Column(String(100), nullable=True)
     telefone = Column(String(20), nullable=True)
     codigo_municipio = Column(String(7), nullable=True)
+    # Valor padrão (BRL) para emissão em lote quando o PDF não traz valor
+    valor_padrao_lote = Column(Numeric(10, 2), nullable=True, default=0)
     
     # Status
     is_active = Column(Boolean, default=True)
