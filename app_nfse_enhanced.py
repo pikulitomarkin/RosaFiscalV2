@@ -893,9 +893,8 @@ def render_single_emission():
                     "reg_ap_trib_sn": int(_tax.get("reg_ap_trib_sn") or 1),
                 }
 
-                # Spinner/status só envolvem a chamada à API. UI de sucesso/erro fica
-                # FORA — senão o Streamlit mantém o loading junto do success e a
-                # barra "Running..." parece travada após a emissão.
+                # Status só envolve a chamada à API; UI de sucesso/erro fica FORA.
+                # st.empty().empty() no finally evita spinner órfão + "Running..." travado.
                 resultado = None
                 erro_emissao = None
                 status_box = st.empty()
@@ -903,15 +902,12 @@ def render_single_emission():
                     "⌛ Emitindo NFS-e via API Nacional (Sefin)... Por favor aguarde..."
                 )
                 try:
-                    with st.spinner(
-                        "⏳ Emitindo NFS-e via API Nacional (Sefin)... Por favor aguarde..."
-                    ):
-                        results = asyncio.run(
-                            get_nfse_service(st.session_state.username).emitir_nfse_lote(
-                                [registro], config_servico
-                            )
+                    results = asyncio.run(
+                        get_nfse_service(st.session_state.username).emitir_nfse_lote(
+                            [registro], config_servico
                         )
-                        resultado = results[0]
+                    )
+                    resultado = results[0]
                 except Exception as e:
                     erro_emissao = e
                     app_logger.error(
