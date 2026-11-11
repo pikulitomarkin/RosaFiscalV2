@@ -90,8 +90,46 @@ def test_pfx_autofills_cnpj_when_profile_empty(tmp_path, monkeypatch):
     assert saved["profile"].cnpj == "05863340000160"
 
 
-def test_prestador_dict_address_per_user():
-    from src.users.profile import DEFAULT_PRESTADOR_ADDRESS, UserProfile
+def test_pfx_overwrites_wrong_identity_from_prior_cert(tmp_path, monkeypatch):
+    """Reenvio do PFX correto substitui CNPJ/razão de outro prestador no perfil."""
+    from src.users import profile as profile_mod
+
+    monkeypatch.setattr(profile_mod, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(profile_mod, "ensure_user_columns", lambda: None)
+
+    saved = {}
+
+    def fake_get(username):
+        return profile_mod.UserProfile(
+            username=username,
+            cnpj="56169351000185",
+            razao_social="NATHALIA GABRIELA SERVICOS DE SAUDE LTDA",
+            nome_fantasia="NATHALIA",
+        )
+
+    def fake_save(p, update_password=None):
+        saved["profile"] = p
+
+    monkeypatch.setattr(profile_mod, "get_user_profile", fake_get)
+    monkeypatch.setattr(profile_mod, "save_user_profile", fake_save)
+
+    pfx = _make_pfx(
+        b"senha123",
+        common_name="NEUROCLIN SERVICOS MEDICOS LTDA:05863340000160",
+    )
+    out = profile_mod.save_user_certificate_pfx("guilherme", pfx, "senha123")
+    assert out.cnpj == "05863340000160"
+    assert "NEUROCLIN" in (out.razao_social or "")
+    assert "NATHALIA" not in (out.razao_social or "")
+    assert profile_mod.cert_pronto(out)
+
+
+def test_prestador_dict_does_not_fallback_to_oficial_identity():
+    from src.users.profile import (
+        DEFAULT_PRESTADOR_ADDRESS,
+        PRESTADOR_OFICIAL,
+        UserProfile,
+    )
 
     p = UserProfile(
         username="empresa2",
@@ -115,7 +153,12 @@ def test_prestador_dict_address_per_user():
     assert d["codigo_municipio"] == "4314902"
     assert d["razao_social"] == "EMPRESA DOIS LTDA"
 
-    # sem endereço preenchido → fallback default
-    p2 = UserProfile(username="x", cnpj="56169351000185")
+    # sem CNPJ/razão → NÃO herda Nathalia (PRESTADOR_OFICIAL)
+    p2 = UserProfile(username="guilherme", cnpj="", razao_social="")
     d2 = p2.prestador_dict()
+    assert d2["cnpj"] == ""
+    assert d2["razao_social"] == ""
+    assert d2["cnpj"] != PRESTADOR_OFICIAL["cnpj"]
+    assert d2["razao_social"] != PRESTADOR_OFICIAL["razao_social"]
+    # endereço ainda pode usar default local
     assert d2["municipio"] == DEFAULT_PRESTADOR_ADDRESS["municipio"]
