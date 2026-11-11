@@ -255,6 +255,21 @@ def _gerar_pdf_nota_ipm(nota: dict) -> bytes:
     story.append(desc_t)
     story.append(Spacer(1, 1.5*mm))
 
+    observacao = str(nota.get("observacao") or "").strip()
+    if observacao:
+        obs_t = Table([
+            [label("Observação / Informações Complementares:")],
+            [P(observacao, fs=7)],
+        ], colWidths=[W])
+        obs_t.setStyle(TableStyle([
+            ('BOX', (0,0), (-1,-1), 0.5, PRETO),
+            ('TOPPADDING', (0,0), (-1,-1), 2),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+            ('LEFTPADDING', (0,0), (-1,-1), 5),
+        ]))
+        story.append(obs_t)
+        story.append(Spacer(1, 1.5*mm))
+
     # ── 7. TOTAIS ──────────────────────────────────────────────────────────────
     cw5 = [W/5]*5
     totais_t = Table([
@@ -783,7 +798,7 @@ def render_single_emission():
         
         hash_paciente = st.text_input(
             "Hash do Paciente",
-            help="Hash do paciente (opcional - aparecerá na DANFSE)"
+            help="Hash do paciente (opcional — vai na observação/xInfComp da NFS-e)"
         )
         
         discriminacao = st.text_area(
@@ -825,10 +840,24 @@ def render_single_emission():
             else:
                 cpf_limpo = tomador_cpf.replace('.', '').replace('-', '').replace('/', '')
 
+                hash_txt = (hash_paciente or "").strip()
+                discr_parts = []
+                if hash_txt:
+                    discr_parts.append(f"Hash do Paciente: {hash_txt}")
+                if discriminacao and str(discriminacao).strip():
+                    discr_parts.append(str(discriminacao).strip())
+                # Observação (xInfComp): hash + discriminação adicional
+                discriminacao_obs = " | ".join(discr_parts) if discr_parts else None
+                # Descrição do serviço permanece legível; hash vai na observação
+                descricao_final = (descricao_servico or "").strip() or "Prestação de serviços conforme contrato"
+                if hash_txt and hash_txt not in descricao_final:
+                    # Mantém hash também na descrição (compatibilidade DANFSE/IPM)
+                    descricao_final = f"{descricao_final} | {hash_txt}"
+
                 registro = {
                     "cpf": cpf_limpo,
                     "nome": tomador_nome,
-                    "hash": hash_paciente or "",
+                    "hash": hash_txt,
                     "bairro": tomador_bairro or "NAO INFORMADO",
                     "cep": (tomador_cep or "").replace("-", "") or "00000000",
                     "logradouro": tomador_logradouro or "NAO INFORMADO",
@@ -838,7 +867,8 @@ def render_single_emission():
                     "valor": valor_servico,
                     "aliquota_iss": aliquota_iss,
                     "item_lista": item_lista.replace(".", ""),
-                    "descricao": hash_paciente if hash_paciente and hash_paciente.strip() else descricao_servico,
+                    "descricao": descricao_final,
+                    "discriminacao": discriminacao_obs,
                     "simples_nacional": simples_nacional,
                     "mei": bool(_tax.get("mei", False)) if simples_nacional else False,
                     "op_simp_nac": (
@@ -892,7 +922,8 @@ def render_single_emission():
                             'valor': valor_servico,
                             'iss': valor_servico * (aliquota_iss / 100),
                             'aliquota_iss': aliquota_iss,
-                            'descricao': hash_paciente if hash_paciente and hash_paciente.strip() else descricao_servico,
+                            'descricao': descricao_final,
+                            'observacao': discriminacao_obs or "",
                             'codigo_servico': item_lista.replace(".", ""),
                             'xml_path': None,
                             'pdf_path': None,
@@ -999,16 +1030,22 @@ def _processar_emissao_lote(
             app_logger.info(log_msg)
 
             cpf_cnpj = (record.get('cpf') or '').replace('.', '').replace('-', '').replace('/', '')
-            hash_paciente = record.get('hash', '') or ''
+            hash_paciente = (record.get('hash', '') or '').strip()
             app_logger.info(f"[{idx+1}] CPF limpo: {cpf_cnpj}, Hash: {hash_paciente}")
 
-            descricao_com_hash = hash_paciente if hash_paciente else descricao_servico
-            discriminacao_com_hash = discriminacao if discriminacao else ""
+            # Descrição legível do serviço; hash vai na observação (xInfComp)
+            descricao_base = (descricao_servico or "").strip() or "Prestação de serviços conforme contrato"
+            descricao_com_hash = descricao_base
+            if hash_paciente and hash_paciente not in descricao_com_hash:
+                descricao_com_hash = f"{descricao_base} | {hash_paciente}"
+
+            discr_parts = []
             if hash_paciente:
-                if discriminacao_com_hash:
-                    discriminacao_com_hash += f"\nHash do Paciente: {hash_paciente}"
-                else:
-                    discriminacao_com_hash = f"Hash do Paciente: {hash_paciente}"
+                discr_parts.append(f"Hash do Paciente: {hash_paciente}")
+            if discriminacao and str(discriminacao).strip():
+                discr_parts.append(str(discriminacao).strip())
+            # Sem \n — xInfComp (TSDescInfCompl) rejeita quebra de linha
+            discriminacao_com_hash = " | ".join(discr_parts) if discr_parts else ""
 
             # Prioridade: valor fixo do formulário > valor do PDF > valor padrão (Configurações)
             valor_padrao = float(getattr(profile, "valor_padrao_lote", 0) or 0)
@@ -1063,6 +1100,8 @@ def _processar_emissao_lote(
                 "aliquota_iss": aliquota_iss,
                 "item_lista": (item_lista or "40303").replace(".", ""),
                 "descricao": descricao_com_hash,
+                # Antes: discriminacao_com_hash era calculada e NUNCA enviada → observação vazia
+                "discriminacao": discriminacao_com_hash or None,
                 "simples_nacional": _sn,
                 "mei": bool(_tax.get("mei", False)) if _sn else False,
                 "op_simp_nac": (
@@ -1095,6 +1134,7 @@ def _processar_emissao_lote(
                     'iss': float(valor_nota) * (aliquota_iss / 100),
                     'aliquota_iss': aliquota_iss,
                     'descricao': descricao_com_hash,
+                    'observacao': discriminacao_com_hash or "",
                     'codigo_servico': (item_lista or '40303').replace('.', ''),
                     'xml_path': None,
                     'pdf_path': None,
