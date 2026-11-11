@@ -131,3 +131,17 @@ def ensure_login_users() -> None:
         app_logger.info("Usuários de login garantidos: nathalia, guilherme")
     except Exception as e:
         app_logger.warning(f"ensure_login_users: {e}")
+
+    # Limpa CNPJ/razão da Nathalia emprados em outros logins (ex.: guilherme
+    # sem A1 ainda mostrando 56169351000185 no Menu Principal). O COALESCE do
+    # upsert acima preserva valores existentes — esta etapa corrige a poluição.
+    try:
+        from src.users.profile import clear_borrowed_oficial_identity
+
+        n = clear_borrowed_oficial_identity()
+        if n:
+            app_logger.info(
+                f"ensure_login_users: removeu identidade oficial emprestada de {n} usuário(s)"
+            )
+    except Exception as e:
+        app_logger.warning(f"ensure_login_users sanitize identidade: {e}")

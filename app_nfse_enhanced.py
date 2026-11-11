@@ -609,21 +609,31 @@ def render_dashboard():
     st.sidebar.markdown(f"👤 **Usuário:** {st.session_state.username}")
     st.sidebar.caption("Produção: vps12436.panel.icontainer.site")
     try:
-        from src.users.profile import cert_pronto, get_user_profile, read_cert_subject
+        from src.users.profile import (
+            cert_pronto,
+            display_cnpj_razao,
+            get_user_profile,
+            identity_is_borrowed_oficial,
+            read_cert_subject,
+        )
         _prof = get_user_profile(st.session_state.username or "")
-        if _prof and _prof.cnpj:
-            st.sidebar.caption(f"CNPJ {_prof.cnpj}")
-            if _prof.razao_social:
-                st.sidebar.caption(_prof.razao_social)
+        _id = display_cnpj_razao(_prof)
+        if _id["cnpj"]:
+            st.sidebar.caption(f"CNPJ {_id['cnpj']}")
+            if _id["razao_social"]:
+                st.sidebar.caption(_id["razao_social"])
         elif _prof:
             st.sidebar.caption("CNPJ não configurado")
-        if _prof and not cert_pronto(_prof):
-            subj = read_cert_subject(_prof)
-            perfil_cnpj = re.sub(r"\D", "", _prof.cnpj or "")
-            if subj.get("cnpj") and perfil_cnpj and subj["cnpj"] != perfil_cnpj:
-                st.sidebar.error("Certificado ≠ CNPJ do perfil")
-            else:
+        if _prof and (identity_is_borrowed_oficial(_prof) or not cert_pronto(_prof)):
+            if identity_is_borrowed_oficial(_prof):
                 st.sidebar.warning("Certificado A1 pendente")
+            else:
+                subj = read_cert_subject(_prof)
+                perfil_cnpj = re.sub(r"\D", "", _prof.cnpj or "")
+                if subj.get("cnpj") and perfil_cnpj and subj["cnpj"] != perfil_cnpj:
+                    st.sidebar.error("Certificado ≠ CNPJ do perfil")
+                else:
+                    st.sidebar.warning("Certificado A1 pendente")
     except Exception:
         pass
     st.sidebar.markdown("---")
@@ -669,15 +679,25 @@ def render_dashboard():
 
 def render_overview():
     """Renderiza página de overview."""
-    from src.users.profile import cert_pronto, get_user_profile
+    from src.users.profile import (
+        cert_pronto,
+        display_cnpj_razao,
+        get_user_profile,
+        identity_is_borrowed_oficial,
+    )
     from src.utils.runtime_config import get_emission_backend
 
     st.title("📊 Dashboard - Visão Geral")
     profile = get_user_profile(st.session_state.username or "")
-    razao = (profile.razao_social if profile and profile.razao_social else "—")
-    cnpj = (profile.cnpj if profile and profile.cnpj else "—")
+    _id = display_cnpj_razao(profile)
+    razao = _id["razao_social"] or "—"
+    cnpj = _id["cnpj"] or "—"
     st.caption(f"Emissor: {razao} · CNPJ {cnpj} · backend={get_emission_backend()}")
-    if not profile or not cert_pronto(profile):
+    if (
+        not profile
+        or identity_is_borrowed_oficial(profile)
+        or not cert_pronto(profile)
+    ):
         st.warning(
             "Certificado A1 ou CNPJ ainda não configurados. Vá em **⚙️ Configurações**, "
             "informe o CNPJ e envie o PFX com a senha do certificado."
@@ -1780,7 +1800,9 @@ def render_settings():
         cert_identity_match,
         cert_pronto,
         clear_user_certificate,
+        display_cnpj_razao,
         get_user_profile,
+        identity_is_borrowed_oficial,
         read_cert_subject,
         save_user_certificate_pfx,
         save_user_profile,
@@ -1799,6 +1821,14 @@ def render_settings():
 
     username = st.session_state.username or ""
     profile = get_user_profile(username) or UserProfile(username=username)
+    # Não exibir CNPJ/razão da Nathalia emprados neste login (sidebar/settings).
+    _safe_id = display_cnpj_razao(profile)
+    if identity_is_borrowed_oficial(profile):
+        profile.cnpj = ""
+        profile.razao_social = ""
+        profile.nome_fantasia = ""
+        if (profile.inscricao_municipal or "").strip() == "56937":
+            profile.inscricao_municipal = ""
 
     st.markdown("### 🏥 Prestador deste usuário")
     st.info(
@@ -1811,10 +1841,23 @@ def render_settings():
         st.markdown("#### Empresa")
         col1, col2 = st.columns(2)
         with col1:
-            cnpj_in = st.text_input("CNPJ *", value=profile.cnpj or "", placeholder="somente números")
-            im_in = st.text_input("Inscrição municipal", value=profile.inscricao_municipal or "")
-            razao_in = st.text_input("Razão social", value=profile.razao_social or "")
-            fantasia_in = st.text_input("Nome fantasia", value=profile.nome_fantasia or "")
+            cnpj_in = st.text_input(
+                "CNPJ *",
+                value=_safe_id["cnpj"] or "",
+                placeholder="somente números",
+            )
+            im_in = st.text_input(
+                "Inscrição municipal",
+                value=profile.inscricao_municipal or "",
+            )
+            razao_in = st.text_input(
+                "Razão social",
+                value=_safe_id["razao_social"] or "",
+            )
+            fantasia_in = st.text_input(
+                "Nome fantasia",
+                value=_safe_id["nome_fantasia"] or "",
+            )
         with col2:
             email_c_in = st.text_input(
                 "E-mail contato",
@@ -2047,7 +2090,7 @@ def render_settings():
         backend = get_emission_backend()
         st.markdown(f"**Backend ativo:** `{backend}`")
         st.markdown(f"**Usuário logado:** `{username}`")
-        st.markdown(f"**CNPJ emissor:** `{profile.cnpj or '—'}`")
+        st.markdown(f"**CNPJ emissor:** `{_safe_id['cnpj'] or '—'}`")
 
     novo_backend = st.selectbox(
         "Backend de emissão",
