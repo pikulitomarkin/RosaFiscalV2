@@ -23,7 +23,7 @@ Atualizado com evidência na VPS `184.107.179.79` (API Nacional / Sefin).
 | Regime SN DPS | `opSimpNac=3` + `regApTribSN=1` | **OK** |
 | Emissão Sefin | id `3663` / chave abaixo | **OK** |
 | Gate cutover | `cutover_ready` + `emission_ready` | **OK** |
-| Desligar Railway | sem `RAILWAY_TOKEN` no agent | **ÚNICO BLOQUEIO OPS** |
+| Desligar Railway | **ainda vivo** `rosafiscalv2.up.railway.app` health=200 | **ÚNICO BLOQUEIO OPS** |
 
 ## Smoke Sefin (evidência no Postgres)
 
@@ -42,22 +42,25 @@ Código antigo enviava `2` para ME/EPP → Sefin tratava como MEI → E0160.
 
 ## Pause Railway (último passo — bloqueado sem token)
 
-Gate já aberto (`cutover_ready` + `emission_ready`). Backup pós-smoke: `20261110_205138`.
+Gate VPS aberto. Backup pós-smoke: `20261110_205138`.
 
-**Opção A — painel:** https://railway.app → pause/stop do Streamlit antigo (não apague DB/volume).
+**Railway ainda ONLINE (probe 2026-11-10):**
+- Health 200: https://rosafiscalv2.up.railway.app/_stcore/health
+- Painel: https://railway.com/project/0dff8bdf-7c3c-4cda-8ca5-34c48a9aa7a6?environmentId=d845247a-c997-4fec-bb0d-b0e1cb1ccd76
+- Probe: `./deploy/scripts/probe_railway_live.sh` (exit 1 = ainda vivo)
 
-**Opção B — agent/CLI** (quando houver token):
+**Opção A — painel:** pause/stop do serviço no link acima (não apague DB/volume).
+
+**Opção B — agent/CLI** (precisa `RAILWAY_TOKEN`):
 
 ```bash
 # https://railway.app/account/tokens
 printf '%s' 'TOKEN' > secrets/RAILWAY_TOKEN && chmod 600 secrets/RAILWAY_TOKEN
 ./deploy/scripts/agent_pause_railway.sh
-# ou watcher:
-./deploy/scripts/agent_watch_railway_pause.sh
+./deploy/scripts/probe_railway_live.sh   # deve sair 0 (offline)
 ```
 
-URL oficial: https://vps12436.panel.icontainer.site/  
-Sem `RAILWAY_TOKEN` / project link, o Cloud Agent **não consegue** confirmar nem pausar o Railway.
+URL oficial de produção: https://vps12436.panel.icontainer.site/
 
 ## Logins
 
