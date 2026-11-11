@@ -1,16 +1,17 @@
 # Migração Railway → VPS
 
-## Status atual (VPS `184.107.179.79`)
+## Status atual (VPS `184.107.179.79`) — probe 2026-11-11
+- **URL oficial de produção:** https://vps12436.panel.icontainer.site/
+- Gate: `cutover_ready=true`, `emission_ready=true`, backend **sefin**
+- Smoke Sefin id **3663** OK · `db_emissoes=3663` · `sefin_cert_users≥1`
+- `migration_complete=false` — **Railway ainda vivo** em https://rosafiscalv2.up.railway.app/ (health 200)
+- **Bloqueio residual único:** pausar Railway no painel (`RAILWAY_TOKEN` foi **skipped** pelo usuário)
 - App em `/opt/rosafiscal` via Docker Compose (`app` + Postgres)
-- **HTTPS (produção):** https://vps12436.panel.icontainer.site/
-- Alternativas: `http://184.107.179.79:8501` e proxy `http://184.107.179.79:8088`
-- Banco restaurado do Railway: **3662** emissões + **3** usuários
+- Alternativas locais: `http://184.107.179.79:8501` e proxy `http://184.107.179.79:8088`
 - Histórico JSON em volume Docker `appdata` → `/app/data/nfse_emitidas.json`
-- Prestador oficial: **Nathalia Gabriela** (CNPJ `56169351000185`) — identidade Gabriel Saleh removida da UI
-- Certificado A1 opcional no fluxo IPM (PEM de terceiro quarentenado em `certificados/backup_gabriel`)
-- **Pendente (bloqueia emissão):** `IPM_SENHA` — salve no dashboard (**Configurações → Senha IPM**) ou via script abaixo
+- Prestador oficial: **Nathalia Gabriela** (CNPJ `56169351000185`)
 - Docker habilitado no boot (`systemctl enable docker`)
-- Scripts: `set_ipm_senha.sh`, `validate_migracao.sh`, `test_ipm_auth.py`
+- Scripts cutover: `cutover_status.sh`, `probe_railway_live.sh`, `railway_shutdown_gate.sh`, `agent_pause_railway.sh`
 
 Login admin: usuário `admin`. Senha root/admin rotacionadas na VPS — recuperar com:
 `ssh … 'cat /root/rosafiscal_rotated_credentials.txt'` (apagar o arquivo após copiar ao cofre).
@@ -146,4 +147,14 @@ docker compose cp nfse_emitidas.json app:/app/data/nfse_emitidas.json
 - Monte certificados em `deploy/certs/` e habilite o bloco 443 em `deploy/nginx.conf`
 
 ### 6. Desligar Railway
-Só após validação em produção na VPS.
+Só após validação em produção na VPS (já feita: smoke 3663 + gate aberto).
+
+1. Confirme VPS: `bash /opt/rosafiscal/deploy/scripts/railway_shutdown_gate.sh` → exit 4 = VPS OK, Railway vivo.
+2. **Pause no painel** (preferencial; token foi skipped):  
+   https://railway.com/project/0dff8bdf-7c3c-4cda-8ca5-34c48a9aa7a6?environmentId=d845247a-c997-4fec-bb0d-b0e1cb1ccd76  
+   Não apague DB/volume.
+3. Se houver `RAILWAY_TOKEN`: `./deploy/scripts/agent_pause_railway.sh`
+4. Confirme offline: `./deploy/scripts/probe_railway_live.sh` → exit 0 (`railway_live=false`)
+5. Só então `migration_complete=true`.
+
+**URL oficial:** https://vps12436.panel.icontainer.site/

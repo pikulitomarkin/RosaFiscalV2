@@ -17,7 +17,7 @@ class NFSeEmissao(Base):
     
     # Identificação
     hash_transacao = Column(String(128), unique=True, index=True, nullable=False)
-    numero_nfse = Column(String(20), index=True)
+    numero_nfse = Column(String(80), index=True)  # chave Sefin nacional ~50 chars
     protocolo = Column(String(128), index=True)
     codigo_verificacao = Column(String(20))
     
@@ -85,7 +85,7 @@ class LogProcessamento(Base):
 
 
 class Usuario(Base):
-    """Usuários do sistema (para autenticação)."""
+    """Usuários do sistema (login Streamlit + emissor NFS-e nacional)."""
     
     __tablename__ = 'usuarios'
     
@@ -97,6 +97,24 @@ class Usuario(Base):
     # Perfil
     nome_completo = Column(String(150))
     email = Column(String(100), unique=True)
+
+    # Perfil fiscal por usuário (API Sefin nacional — mTLS)
+    cnpj = Column(String(14), nullable=True)
+    inscricao_municipal = Column(String(30), nullable=True)
+    razao_social = Column(String(200), nullable=True)
+    nome_fantasia = Column(String(150), nullable=True)
+    cert_password = Column(String(255), nullable=True)  # senha do A1 (PFX)
+    # Endereço do prestador (por usuário)
+    logradouro = Column(String(125), nullable=True)
+    numero = Column(String(20), nullable=True)
+    complemento = Column(String(60), nullable=True)
+    bairro = Column(String(60), nullable=True)
+    municipio = Column(String(60), nullable=True)
+    uf = Column(String(2), nullable=True)
+    cep = Column(String(8), nullable=True)
+    email_contato = Column(String(100), nullable=True)
+    telefone = Column(String(20), nullable=True)
+    codigo_municipio = Column(String(7), nullable=True)
     
     # Status
     is_active = Column(Boolean, default=True)
@@ -107,4 +125,4 @@ class Usuario(Base):
     last_login = Column(DateTime)
     
     def __repr__(self):
-        return f"<Usuario(id={self.id}, username={self.username})>"
+        return f"<Usuario(id={self.id}, username={self.username}, cnpj={self.cnpj})>"

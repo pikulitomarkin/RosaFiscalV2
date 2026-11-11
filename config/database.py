@@ -60,13 +60,29 @@ async def init_database():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-        # Amplia colunas em bases já existentes (create_all não altera tamanho)
+        # Amplia / cria colunas em bases já existentes (create_all não altera)
         if settings.DATABASE_URL.startswith("postgresql"):
             alters = [
                 "ALTER TABLE nfse_emissoes ALTER COLUMN hash_transacao TYPE VARCHAR(128)",
+                "ALTER TABLE nfse_emissoes ALTER COLUMN numero_nfse TYPE VARCHAR(80)",
                 "ALTER TABLE nfse_emissoes ALTER COLUMN protocolo TYPE VARCHAR(128)",
                 "ALTER TABLE nfse_emissoes ALTER COLUMN cpf_tomador TYPE VARCHAR(14)",
                 "ALTER TABLE nfse_emissoes ALTER COLUMN url_nfse TYPE VARCHAR(1000)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cnpj VARCHAR(14)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS inscricao_municipal VARCHAR(30)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS razao_social VARCHAR(200)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS nome_fantasia VARCHAR(150)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cert_password VARCHAR(255)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS logradouro VARCHAR(125)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS numero VARCHAR(20)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS complemento VARCHAR(60)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS bairro VARCHAR(60)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS municipio VARCHAR(60)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS uf VARCHAR(2)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cep VARCHAR(8)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email_contato VARCHAR(100)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefone VARCHAR(20)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS codigo_municipio VARCHAR(7)",
             ]
             for stmt in alters:
                 try:

@@ -1,49 +1,78 @@
 # Checklist cutover Railway → VPS
 
-Atualizado com evidência na VPS `184.107.179.79`.
+Atualizado com evidência na VPS `184.107.179.79` (API Nacional / Sefin).  
+Probe refeito em **2026-11-11** (agent cutover).
 
 | Requisito | Evidência | Status |
 |-----------|-----------|--------|
-| App Docker no ar | `docker compose ps` app Up, restart `unless-stopped` | OK |
-| Postgres com dados | 3662 `nfse_emissoes`, 3 `usuarios` | OK |
-| Histórico JSON | `/app/data/nfse_emitidas.json` no volume | OK |
+| App Docker no ar | `docker compose ps` app Up | OK |
+| Postgres com dados | **3663** `nfse_emissoes` (inclui smoke) | OK |
+| Histórico JSON | `/app/data/nfse_emitidas.json` | OK |
 | HTTP local | `:8501/_stcore/health` → 200 | OK |
 | HTTPS produção | `https://vps12436.panel.icontainer.site/` → 200 | OK |
-| Docker no boot | `systemctl is-enabled docker` → enabled | OK |
-| Backup automático | cron 03:15 + backup manual `20261105_203203` OK | OK |
-| Watcher senha IPM | cron `* * * * * watch_ipm_senha.sh` | OK |
-| Rede Atende.Net | `ws-santarosa...` HTTP 401 com auth inválida | OK |
-| Prestador Nathalia | UI Configurações (sem Gabriel Saleh) | OK |
-| Campo senha IPM no dashboard | Configurações + runtime_config volume | OK |
-| **IPM_SENHA configurada** | chave presente na VPS / runtime_config | OK (valor antigo rejeitado) |
-| **IPM auth Atende.Net** | `test_ipm_auth` / probe HTTP | **FAIL 401** (blocker) |
-| Evidência UI cutover | login VPS mostra alerta 7/8 + CNPJ | OK (artifact) |
-| Evidência portal senha | login NFS-e + link Recuperar Senha | OK (artifact) |
-| Emissão / test_ipm_auth | bloqueado sem senha | **PENDENTE** |
-| Gate desligar Railway | `railway_shutdown_gate.sh` exit 2 enquanto blocker | OK (proteção) |
-| Cert A1 | opcional no fluxo IPM | WARN |
-| Trocar senha root | rotacionada; ver `/root/rosafiscal_rotated_credentials.txt` | **OK** (ops: copiar p/ cofre) |
-| Trocar senha admin dashboard | rotacionada no Postgres + `.env` | **OK** (ops: copiar p/ cofre) |
-| Código VPS = tip da branch | sync `cursor/migracao-vps-ddd1` @ `bbd1273` | OK |
-| Restore dry-run do backup | `20261105_203203` → 3662/3 = prod | **OK** |
-| Desligar Railway | só após emissão validada | PENDENTE |
+| Docker no boot | `systemctl is-enabled docker` | OK |
+| Backup automático | cron 03:15 | OK |
+| Restore dry-run | backup `20261105_203203` | OK |
+| Backup pós-smoke | `backups/20261110_205138/` | **OK** |
+| Root/admin rotacionados | `/root/rosafiscal_rotated_credentials.txt` | OK (ops: cofre) |
+| Branch API nacional | `cursor/api-nacional-multiusuario-ddd1` / PR #3 | OK |
+| Deploy na VPS | tip atual + rebuild | **OK** |
+| Seed `nathalia` + `guilherme` | senha `admin` | **OK** |
+| Cert A1 nathalia | `/app/data/certs/nathalia/` CNPJ `56169351000185` | **OK** |
+| Cert A1 (gate) | `sefin_cert_users=2` no `cutover_status` | OK (detalhe guilherme: outro agent) |
+| IBGE Santa Rosa | `4317202` | **OK** |
+| Regime SN DPS | `opSimpNac=3` + `regApTribSN=1` | **OK** |
+| Emissão Sefin | id `3663` / chave abaixo | **OK** |
+| Gate cutover | `cutover_ready` + `emission_ready` | **OK** |
+| Desligar Railway | **ainda vivo** health=200 (probe 2026-11-11) | **ÚNICO BLOQUEIO OPS** |
 
-## Bloqueio atual
-Há senha gravada na VPS, mas o webservice responde **HTTP 401 Acesso Negado**.
-Precisa da **senha atual** do portal https://nfse-santarosa.atende.net/ (login CNPJ `56169351000185`):
-1. Recuperar senha no portal (Turnstile/e-mail), depois
-2. Dashboard VPS → Configurações → Senha IPM, e/ou secret Cursor `IPM_SENHA`, e/ou `/opt/rosafiscal/secrets/ipm_senha`
+## Smoke Sefin (evidência no Postgres)
 
-`cutover_ready` só fica true com **auth IPM OK** (não basta a chave existir).
-
-Credenciais root/admin rotacionadas (não versionadas):
-```bash
-ssh -i KEY root@184.107.179.79 'cat /root/rosafiscal_rotated_credentials.txt'
+```
+id=3663 usuario=nathalia status=sucesso
+hash=SMOKE-VPS-8d3ca228331f4bc1
+chave=43172022256169351000185000000000000126114512958866
+cMun=4317202 opSimpNac=3 mei=false regApTribSN=1
+created_at=2026-11-10 23:50:26 UTC (20:50 America/Sao_Paulo)
 ```
 
-Modelo e-mail contabilidade: `deploy/SOLICITAR_SENHA_IPM.md`
+## Correção E0160
 
-Validar depois:
+Enum oficial: `opSimpNac` **1=Não optante, 2=MEI, 3=ME/EPP**.  
+Código antigo enviava `2` para ME/EPP → Sefin tratava como MEI → E0160.
+
+## Pause Railway (último passo — token dispensado)
+
+Gate VPS aberto (`cutover_ready=true`, `emission_ready=true`).  
+Backup pós-smoke: `20261110_205138`.  
+`migration_complete` **permanece false** enquanto `railway_live=true`.
+
+**Railway ainda ONLINE (probe 2026-11-11):**
+- Health 200: https://rosafiscalv2.up.railway.app/_stcore/health
+- Painel: https://railway.com/project/0dff8bdf-7c3c-4cda-8ca5-34c48a9aa7a6?environmentId=d845247a-c997-4fec-bb0d-b0e1cb1ccd76
+- Probe: `./deploy/scripts/probe_railway_live.sh` (exit 1 = ainda vivo)
+- Gate: `./deploy/scripts/railway_shutdown_gate.sh` → exit **4** enquanto Railway vivo
+
+**`RAILWAY_TOKEN` — SKIPPED pelo usuário.** Não aguardar token nem re-solicitar de forma agressiva.  
+Caminho operacional restante: **pause/stop no painel** (Opção A). Não apague DB/volume.
+
+**Opção A — painel (preferencial agora):** pause/stop do serviço no link do projeto acima.
+
+**Opção B — agent/CLI** (só se o token voltar a ser fornecido):
+
 ```bash
-/opt/rosafiscal/deploy/scripts/post_cutover_check.sh
+# https://railway.app/account/tokens
+printf '%s' 'TOKEN' > secrets/RAILWAY_TOKEN && chmod 600 secrets/RAILWAY_TOKEN
+./deploy/scripts/agent_pause_railway.sh
+./deploy/scripts/probe_railway_live.sh   # deve sair 0 (offline)
 ```
+
+**URL oficial de produção (use esta):** https://vps12436.panel.icontainer.site/  
+URL legada Railway (não usar após cutover): https://rosafiscalv2.up.railway.app/
+
+## Logins
+
+| Usuário | Senha | CNPJ |
+|---------|-------|------|
+| `nathalia` | `admin` | `56169351000185` |
+| `guilherme` | `admin` | (cert sob outro agent) |
