@@ -83,6 +83,7 @@ async def init_database():
                 "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email_contato VARCHAR(100)",
                 "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefone VARCHAR(20)",
                 "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS codigo_municipio VARCHAR(7)",
+                "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS valor_padrao_lote NUMERIC(10, 2) DEFAULT 0",
             ]
             for stmt in alters:
                 try:

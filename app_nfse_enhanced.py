@@ -1037,14 +1037,44 @@ def _processar_emissao_lote(
                 else:
                     discriminacao_com_hash = f"Hash do Paciente: {hash_paciente}"
 
-            # Valor fixo do formulário (> 0) substitui o valor do PDF
-            if valor_servico > 0:
-                valor_nota = valor_servico
+            # Prioridade: valor fixo do formulário > valor do PDF > valor padrão (Configurações)
+            valor_padrao = float(getattr(profile, "valor_padrao_lote", 0) or 0)
+            valor_pdf = 0.0
+            try:
+                valor_pdf = float(record.get("valor") or 0)
+            except (TypeError, ValueError):
+                valor_pdf = 0.0
+
+            if valor_servico and float(valor_servico) > 0:
+                valor_nota = float(valor_servico)
                 fonte_valor = "formulário (fixo)"
-            else:
-                valor_nota = record.get('valor') or 0
+            elif valor_pdf > 0:
+                valor_nota = valor_pdf
                 fonte_valor = "PDF"
-            app_logger.info(f"[{idx+1}] Emitindo via Sefin (valor={valor_nota}, fonte={fonte_valor}, user={username})...")
+            elif valor_padrao > 0:
+                valor_nota = valor_padrao
+                fonte_valor = "Configurações (valor padrão lote)"
+            else:
+                falhas += 1
+                erro_msg = (
+                    "Valor ausente no PDF e sem valor padrão lote. "
+                    "Defina em ⚙️ Configurações → Valor padrão lote (R$)."
+                )
+                app_logger.error(f"[{idx+1}] {erro_msg}")
+                logs.append(f"  ❌ {erro_msg}")
+                log_text.code("\n".join(logs[-20:]))
+                resultados.append({
+                    "nome": record.get("nome", "N/A"),
+                    "cpf": record.get("cpf", "N/A"),
+                    "status": "❌ Erro",
+                    "erro": erro_msg,
+                })
+                progress_bar.progress((idx + 1) / len(records_to_process))
+                continue
+
+            app_logger.info(
+                f"[{idx+1}] Emitindo via Sefin (valor={valor_nota}, fonte={fonte_valor}, user={username})..."
+            )
 
             _reg = {
                 "cpf": cpf_cnpj,
@@ -1244,6 +1274,13 @@ def render_batch_emission():
                         taxa = (len(valid_records) / len(records) * 100) if records else 0
                         st.metric("Taxa de Sucesso", f"{taxa:.1f}%")
                     
+                    # Valor padrão do perfil (Configurações) para fallback do lote
+                    from src.users.profile import get_user_profile as _get_profile_lote
+                    _perfil_lote = _get_profile_lote(st.session_state.username or "")
+                    valor_padrao_lote = float(
+                        getattr(_perfil_lote, "valor_padrao_lote", 0) or 0
+                    ) if _perfil_lote else 0.0
+
                     # Preview dos dados
                     with st.expander("👁️ Visualizar Dados Extraídos"):
                         import pandas as pd
@@ -1264,26 +1301,52 @@ def render_batch_emission():
                         df = pd.DataFrame(display_data)
                         st.dataframe(df, use_container_width=True)
                         
-                        registros_sem_valor = sum(1 for r in valid_records if not r.get('valor'))
+                        registros_sem_valor = sum(
+                            1 for r in valid_records
+                            if not r.get('valor') or float(r.get('valor') or 0) <= 0
+                        )
                         if registros_sem_valor > 0:
-                            st.warning(f"⚠️ **{registros_sem_valor} registro(s)** sem valor no PDF. Para esses, será usado o valor padrão configurado abaixo.")
+                            if valor_padrao_lote > 0:
+                                st.warning(
+                                    f"⚠️ **{registros_sem_valor} registro(s)** sem valor no PDF. "
+                                    f"Para esses, será usado o valor padrão de Configurações "
+                                    f"(R$ {valor_padrao_lote:,.2f})."
+                                )
+                            else:
+                                st.error(
+                                    f"❌ **{registros_sem_valor} registro(s)** sem valor no PDF e "
+                                    "não há **valor padrão lote** em ⚙️ Configurações. "
+                                    "Defina o valor padrão antes de emitir."
+                                )
                         else:
-                            st.success("✅ Valor extraído do PDF para todos os registros. O valor do formulário abaixo será usado apenas como fallback.")
+                            st.success(
+                                "✅ Valor extraído do PDF para todos os registros. "
+                                "O valor fixo do formulário (se > 0) sobrescreve o PDF."
+                            )
                     
                     # Configuração do serviço
                     st.markdown("### 3️⃣ Configuração do Serviço")
+                    if valor_padrao_lote > 0:
+                        st.info(
+                            f"Valor padrão lote (Configurações): **R$ {valor_padrao_lote:,.2f}** "
+                            "— usado quando o PDF não tiver valor."
+                        )
                     
                     with st.form("batch_config_form"):
                         col1, col2 = st.columns(2)
                         
                         with col1:
                             valor_servico = st.number_input(
-                                "💰 Valor Fixo (R$) — 0 = usar valor do PDF",
+                                "💰 Valor Fixo (R$) — 0 = PDF / padrão Configurações",
                                 min_value=0.0,
                                 value=0.0,
                                 step=1.00,
                                 format="%.2f",
-                                help="Se preenchido (> 0), todas as notas serão emitidas com esse valor. Se deixar em 0, cada nota usará o valor extraído do PDF."
+                                help=(
+                                    "Se > 0, todas as notas usam este valor. "
+                                    "Se 0: usa o valor do PDF; se o PDF não tiver valor, "
+                                    "usa o valor padrão lote de Configurações."
+                                ),
                             )
                             
                             aliquota_iss = st.number_input(
@@ -1340,12 +1403,18 @@ def render_batch_emission():
                             st.metric("Registros", min(limite_lote, len(valid_records)))
                         
                         with col2:
-                            # Calcula valor total: se valor fixo definido usa ele; senão usa valor do PDF de cada registro
+                            # Calcula valor total: fixo > PDF > padrão Configurações
                             registros_resumo = valid_records[:min(limite_lote, len(valid_records))]
                             if valor_servico > 0:
                                 valor_total = valor_servico * len(registros_resumo)
                             else:
-                                valor_total = sum(r.get('valor') or 0 for r in registros_resumo)
+                                valor_total = 0.0
+                                for r in registros_resumo:
+                                    v_pdf = float(r.get("valor") or 0)
+                                    if v_pdf > 0:
+                                        valor_total += v_pdf
+                                    elif valor_padrao_lote > 0:
+                                        valor_total += valor_padrao_lote
                             st.metric("Valor Total", f"R$ {valor_total:,.2f}")
 
                         with col3:
@@ -1356,8 +1425,14 @@ def render_batch_emission():
                             if valor_servico > 0:
                                 st.metric("Fonte do valor", "Fixo (formulário)")
                             else:
-                                com_valor_pdf = sum(1 for r in registros_resumo if r.get('valor'))
-                                st.metric("Com valor do PDF", f"{com_valor_pdf}/{len(registros_resumo)}")
+                                com_valor_pdf = sum(
+                                    1 for r in registros_resumo
+                                    if float(r.get("valor") or 0) > 0
+                                )
+                                st.metric(
+                                    "Com valor do PDF",
+                                    f"{com_valor_pdf}/{len(registros_resumo)}",
+                                )
                         
                         st.markdown("---")
                         
@@ -1372,15 +1447,30 @@ def render_batch_emission():
                         if not valid_records:
                             st.error("❌ Nenhum registro válido encontrado!")
                         else:
-                            _processar_emissao_lote(
-                                records_to_process=valid_records[:limite_lote],
-                                valor_servico=valor_servico,
-                                aliquota_iss=aliquota_iss,
-                                item_lista=item_lista,
-                                descricao_servico=descricao_servico,
-                                discriminacao=discriminacao,
-                                simples_nacional=simples_nacional,
-                            )
+                            sem_valor = [
+                                r for r in valid_records[:limite_lote]
+                                if float(r.get("valor") or 0) <= 0
+                            ]
+                            if (
+                                (not valor_servico or float(valor_servico) <= 0)
+                                and sem_valor
+                                and valor_padrao_lote <= 0
+                            ):
+                                st.error(
+                                    "❌ Há registros sem valor no PDF e o **valor padrão lote** "
+                                    "não está definido. Vá em **⚙️ Configurações**, informe "
+                                    "**Valor padrão lote (R$)** e salve antes de emitir."
+                                )
+                            else:
+                                _processar_emissao_lote(
+                                    records_to_process=valid_records[:limite_lote],
+                                    valor_servico=valor_servico,
+                                    aliquota_iss=aliquota_iss,
+                                    item_lista=item_lista,
+                                    descricao_servico=descricao_servico,
+                                    discriminacao=discriminacao,
+                                    simples_nacional=simples_nacional,
+                                )
 
                 else:
                     st.error("❌ Não foi possível extrair dados do PDF!")
@@ -1897,6 +1987,44 @@ def render_settings():
             st.rerun()
         except Exception as e:
             app_logger.exception("Falha ao salvar perfil fiscal")
+            st.error(f"Falha ao salvar: {e}")
+
+    st.markdown("---")
+    st.markdown("### 📦 Emissão em lote (deste usuário)")
+    st.caption(
+        "Usado quando o PDF não traz valor (ou traz zero). "
+        "Cada usuário tem o próprio valor padrão."
+    )
+    with st.form("valor_padrao_lote_form"):
+        valor_padrao_in = st.number_input(
+            "Valor padrão lote (R$)",
+            min_value=0.0,
+            value=float(profile.valor_padrao_lote or 0),
+            step=1.00,
+            format="%.2f",
+            help="Fallback BRL para notas do lote sem valor no PDF.",
+        )
+        salvar_valor_lote = st.form_submit_button(
+            "💾 Salvar valor padrão lote",
+            type="primary",
+            use_container_width=True,
+        )
+    if salvar_valor_lote:
+        try:
+            profile.valor_padrao_lote = float(valor_padrao_in or 0)
+            save_user_profile(profile)
+            if profile.valor_padrao_lote > 0:
+                st.success(
+                    f"✅ Valor padrão lote salvo: R$ {profile.valor_padrao_lote:,.2f}."
+                )
+            else:
+                st.warning(
+                    "Valor padrão lote zerado. Sem valor no PDF, a emissão em lote "
+                    "pedirá para configurar este campo."
+                )
+            st.rerun()
+        except Exception as e:
+            app_logger.exception("Falha ao salvar valor padrão lote")
             st.error(f"Falha ao salvar: {e}")
 
     st.markdown("---")
