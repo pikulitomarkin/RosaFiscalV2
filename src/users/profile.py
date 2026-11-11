@@ -76,15 +76,22 @@ class UserProfile:
         return self.cert_dir / "key.pem"
 
     def prestador_dict(self) -> Dict[str, Any]:
+        """Monta dict do prestador deste usuário.
+
+        Identidade fiscal (CNPJ / razão / fantasia / IM) NÃO herda PRESTADOR_OFICIAL
+        (Nathalia): usuário sem cadastro próprio fica com campos vazios — evita emitir
+        ou exibir a empresa de outro login.
+        Endereço ainda pode usar DEFAULT_PRESTADOR_ADDRESS só como fallback de local.
+        """
         def _or(val: str, key: str) -> str:
             v = (val or "").strip()
             return v if v else DEFAULT_PRESTADOR_ADDRESS.get(key, "")
 
         return {
-            "cnpj": re.sub(r"\D", "", self.cnpj) or PRESTADOR_OFICIAL["cnpj"],
-            "inscricao_municipal": (self.inscricao_municipal or PRESTADOR_OFICIAL["inscricao_municipal"]).strip(),
-            "razao_social": (self.razao_social or PRESTADOR_OFICIAL["razao_social"]).strip(),
-            "nome_fantasia": (self.nome_fantasia or PRESTADOR_OFICIAL["nome_fantasia"]).strip(),
+            "cnpj": re.sub(r"\D", "", self.cnpj or ""),
+            "inscricao_municipal": (self.inscricao_municipal or "").strip(),
+            "razao_social": (self.razao_social or "").strip(),
+            "nome_fantasia": (self.nome_fantasia or "").strip(),
             "logradouro": _or(self.logradouro, "logradouro"),
             "numero": _or(self.numero, "numero"),
             "complemento": (self.complemento or "").strip(),
@@ -292,11 +299,6 @@ def cert_arquivos_ok(profile: UserProfile) -> bool:
         return False
 
 
-def cert_pronto(profile: UserProfile) -> bool:
-    """Pronto para emitir: CNPJ no perfil + PEM/key no volume."""
-    return bool(re.sub(r"\D", "", profile.cnpj or "")) and cert_arquivos_ok(profile)
-
-
 def _cnpj_e_nome_do_certificado(certificate: x509.Certificate) -> tuple[str, str]:
     """Extrai CNPJ (14 dígitos) e razão social do CN do A1 ICP-Brasil."""
     try:
@@ -310,11 +312,104 @@ def _cnpj_e_nome_do_certificado(certificate: x509.Certificate) -> tuple[str, str
     return cnpj, razao
 
 
+def read_cert_subject(profile: UserProfile) -> Dict[str, str]:
+    """Lê CN/CNPJ do PEM em disco deste usuário (sem alterar o perfil)."""
+    empty = {"cn": "", "cnpj": "", "razao_social": ""}
+    if not cert_arquivos_ok(profile):
+        return empty
+    try:
+        certificate = x509.load_pem_x509_certificate(
+            profile.cert_pem.read_bytes(), default_backend()
+        )
+        try:
+            cn = str(
+                certificate.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+                or ""
+            ).strip()
+        except Exception:
+            cn = ""
+        cnpj, razao = _cnpj_e_nome_do_certificado(certificate)
+        return {"cn": cn, "cnpj": cnpj, "razao_social": razao}
+    except Exception as e:
+        app_logger.warning(f"read_cert_subject {profile.username}: {e}")
+        return empty
+
+
+def cert_identity_match(profile: UserProfile) -> bool:
+    """True se o PEM existe e o CNPJ do subject bate com o CNPJ do perfil."""
+    cnpj_perfil = re.sub(r"\D", "", profile.cnpj or "")
+    if not cnpj_perfil or not cert_arquivos_ok(profile):
+        return False
+    subj = read_cert_subject(profile)
+    cnpj_cert = re.sub(r"\D", "", subj.get("cnpj") or "")
+    # Cert sem CNPJ no CN: não bloqueia só por formato; exige arquivos + CNPJ perfil.
+    if not cnpj_cert:
+        return True
+    return cnpj_cert == cnpj_perfil
+
+
+def cert_pronto(profile: UserProfile) -> bool:
+    """Pronto para emitir: CNPJ no perfil + PEM/key + subject alinhado ao CNPJ."""
+    return (
+        bool(re.sub(r"\D", "", profile.cnpj or ""))
+        and cert_arquivos_ok(profile)
+        and cert_identity_match(profile)
+    )
+
+
+def clear_user_certificate(
+    username: str, *, clear_identity: bool = False
+) -> Optional[UserProfile]:
+    """Remove PEM/key do usuário. Opcionalmente zera CNPJ/razão (cert errado)."""
+    profile = get_user_profile(username)
+    if not profile:
+        return None
+    for path in (profile.cert_pem, profile.key_pem):
+        try:
+            if path.exists():
+                path.unlink()
+        except Exception as e:
+            app_logger.warning(f"clear_user_certificate unlink {path}: {e}")
+    profile.cert_password = ""
+    if clear_identity:
+        profile.cnpj = ""
+        profile.razao_social = ""
+        profile.nome_fantasia = ""
+    save_user_profile(profile)
+    # Força limpar senha mesmo com COALESCE(NULLIF) no UPDATE
+    dsn = _sync_dsn()
+    if dsn.startswith("postgresql://"):
+        try:
+            conn = psycopg2.connect(dsn)
+            cur = conn.cursor()
+            if clear_identity:
+                cur.execute(
+                    """
+                    UPDATE usuarios SET cert_password = '', cnpj = '',
+                           razao_social = '', nome_fantasia = ''
+                    WHERE username = %s
+                    """,
+                    (username,),
+                )
+            else:
+                cur.execute(
+                    "UPDATE usuarios SET cert_password = '' WHERE username = %s",
+                    (username,),
+                )
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            app_logger.warning(f"clear_user_certificate db: {e}")
+    return get_user_profile(username)
+
+
 def save_user_certificate_pfx(username: str, pfx_bytes: bytes, password: str) -> UserProfile:
     """Converte PFX/P12 em PEM por usuário e persiste senha do certificado.
 
-    Se o perfil ainda não tiver CNPJ, preenche a partir do subject do A1
-    (padrão ICP-Brasil `RAZAO:CNPJ`), para o status não ficar 'pendente' após salvar.
+    Sempre sincroniza CNPJ/razão social a partir do subject do A1
+    (padrão ICP-Brasil `RAZAO:CNPJ`) para este username — sobrescreve valores
+    anteriores para não manter identidade de outro prestador após reenvio.
     """
     profile = get_user_profile(username)
     if not profile:
@@ -350,9 +445,9 @@ def save_user_certificate_pfx(username: str, pfx_bytes: bytes, password: str) ->
         pass
 
     cnpj_cert, razao_cert = _cnpj_e_nome_do_certificado(certificate)
-    if cnpj_cert and not re.sub(r"\D", "", profile.cnpj or ""):
+    if cnpj_cert:
         profile.cnpj = cnpj_cert
-    if razao_cert and not (profile.razao_social or "").strip():
+    if razao_cert:
         profile.razao_social = razao_cert
         if not (profile.nome_fantasia or "").strip():
             profile.nome_fantasia = razao_cert.split()[0] if razao_cert else ""
@@ -361,6 +456,7 @@ def save_user_certificate_pfx(username: str, pfx_bytes: bytes, password: str) ->
     save_user_profile(profile)
     app_logger.info(
         f"Certificado A1 salvo para usuário={username} cnpj={profile.cnpj or '(vazio)'} "
+        f"subject_cnpj={cnpj_cert or '(vazio)'} "
         f"arquivos_ok={cert_arquivos_ok(profile)} pronto={cert_pronto(profile)}"
     )
     return profile
@@ -374,11 +470,27 @@ def get_nfse_service_for_username(username: str):
     if not profile:
         raise RuntimeError("Usuário sem perfil — faça login novamente.")
     if not cert_pronto(profile):
+        subj = read_cert_subject(profile) if profile else {}
+        if (
+            cert_arquivos_ok(profile)
+            and subj.get("cnpj")
+            and re.sub(r"\D", "", profile.cnpj or "")
+            and not cert_identity_match(profile)
+        ):
+            raise RuntimeError(
+                "CNPJ do perfil não confere com o certificado A1 em disco. "
+                "Vá em Configurações e reenvie o PFX correto deste prestador."
+            )
         raise RuntimeError(
             "Certificado A1 ou CNPJ não configurados. Vá em Configurações e envie o PFX."
         )
+    prestador = profile.prestador_dict()
+    if not prestador.get("cnpj") or not prestador.get("razao_social"):
+        raise RuntimeError(
+            "Perfil incompleto (CNPJ/razão). Salve o perfil ou reenvie o certificado A1."
+        )
     return NFSeService(
-        prestador_config=profile.prestador_dict(),
+        prestador_config=prestador,
         cert_path=str(profile.cert_pem),
         key_path=str(profile.key_pem),
     )

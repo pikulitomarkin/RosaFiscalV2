@@ -607,12 +607,21 @@ def render_dashboard():
     st.sidebar.title("⚙️ Menu Principal")
     st.sidebar.markdown(f"👤 **Usuário:** {st.session_state.username}")
     try:
-        from src.users.profile import cert_pronto, get_user_profile
+        from src.users.profile import cert_pronto, get_user_profile, read_cert_subject
         _prof = get_user_profile(st.session_state.username or "")
         if _prof and _prof.cnpj:
             st.sidebar.caption(f"CNPJ {_prof.cnpj}")
+            if _prof.razao_social:
+                st.sidebar.caption(_prof.razao_social)
+        elif _prof:
+            st.sidebar.caption("CNPJ não configurado")
         if _prof and not cert_pronto(_prof):
-            st.sidebar.warning("Certificado A1 pendente")
+            subj = read_cert_subject(_prof)
+            perfil_cnpj = re.sub(r"\D", "", _prof.cnpj or "")
+            if subj.get("cnpj") and perfil_cnpj and subj["cnpj"] != perfil_cnpj:
+                st.sidebar.error("Certificado ≠ CNPJ do perfil")
+            else:
+                st.sidebar.warning("Certificado A1 pendente")
     except Exception:
         pass
     st.sidebar.markdown("---")
@@ -659,12 +668,12 @@ def render_dashboard():
 def render_overview():
     """Renderiza página de overview."""
     from src.users.profile import cert_pronto, get_user_profile
-    from src.utils.runtime_config import PRESTADOR_OFICIAL, get_emission_backend
+    from src.utils.runtime_config import get_emission_backend
 
     st.title("📊 Dashboard - Visão Geral")
     profile = get_user_profile(st.session_state.username or "")
-    razao = (profile.razao_social if profile and profile.razao_social else PRESTADOR_OFICIAL["razao_social"])
-    cnpj = (profile.cnpj if profile and profile.cnpj else PRESTADOR_OFICIAL["cnpj"])
+    razao = (profile.razao_social if profile and profile.razao_social else "—")
+    cnpj = (profile.cnpj if profile and profile.cnpj else "—")
     st.caption(f"Emissor: {razao} · CNPJ {cnpj} · backend={get_emission_backend()}")
     if not profile or not cert_pronto(profile):
         st.warning(
@@ -1766,8 +1775,11 @@ def render_settings():
         DEFAULT_PRESTADOR_ADDRESS,
         UserProfile,
         cert_arquivos_ok,
+        cert_identity_match,
         cert_pronto,
+        clear_user_certificate,
         get_user_profile,
+        read_cert_subject,
         save_user_certificate_pfx,
         save_user_profile,
     )
@@ -1887,18 +1899,31 @@ def render_settings():
 
     st.markdown("---")
     st.markdown("### 🔐 Certificado Digital A1 (deste usuário)")
+    cert_subj = read_cert_subject(profile)
+    if cert_arquivos_ok(profile) and cert_subj.get("cn"):
+        st.info(
+            f"**Subject do A1 em disco:** `{cert_subj['cn']}`\n\n"
+            f"Pasta: `data/certs/{username}/`"
+        )
     if cert_pronto(profile):
         st.success(
-            f"Certificado A1 pronto (CNPJ {profile.cnpj}) em `data/certs/{username}/`."
+            f"Certificado A1 pronto (CNPJ {profile.cnpj}) — identidade alinhada ao PEM."
+        )
+    elif cert_arquivos_ok(profile) and profile.cnpj and not cert_identity_match(profile):
+        st.error(
+            "O PEM em disco **não é deste CNPJ**. "
+            f"Perfil: `{profile.cnpj}` · Certificado: `{cert_subj.get('cnpj') or '—'}`. "
+            "Remova o certificado e envie o PFX correto deste prestador."
         )
     elif cert_arquivos_ok(profile):
         st.warning(
             "Arquivos PEM já estão no disco, mas falta **CNPJ** no perfil acima. "
-            "Salve o CNPJ ou reenvie o PFX (o CNPJ do certificado será preenchido automaticamente)."
+            "Reenvie o PFX — CNPJ e razão social serão lidos do certificado."
         )
     else:
         st.warning(
-            "Envie o PFX/P12 e a senha do A1. Se o CNPJ estiver vazio, ele será lido do certificado."
+            "Envie o PFX/P12 e a senha do A1. CNPJ e razão social serão preenchidos "
+            "a partir do subject do certificado (somente deste usuário)."
         )
 
     pfx_file = st.file_uploader("Arquivo PFX / P12", type=["pfx", "p12"], key="pfx_upload")
@@ -1908,7 +1933,30 @@ def render_settings():
         placeholder="Senha do arquivo PFX (não a senha de login)",
         key="cert_pwd_input",
     )
-    if st.button("📤 Converter e salvar certificado", use_container_width=True, key="salvar_cert_btn"):
+    col_save, col_clear = st.columns(2)
+    with col_save:
+        salvar_cert = st.button(
+            "📤 Converter e salvar certificado",
+            use_container_width=True,
+            key="salvar_cert_btn",
+        )
+    with col_clear:
+        limpar_cert = st.button(
+            "🗑️ Remover certificado deste usuário",
+            use_container_width=True,
+            key="limpar_cert_btn",
+        )
+
+    if limpar_cert:
+        try:
+            clear_user_certificate(username, clear_identity=False)
+            st.success("Certificado removido. Envie o PFX correto deste prestador.")
+            st.rerun()
+        except Exception as e:
+            app_logger.exception("Falha ao remover certificado")
+            st.error(f"Falha ao remover: {e}")
+
+    if salvar_cert:
         if not pfx_file:
             st.error("Selecione o arquivo PFX/P12.")
         elif not cert_pwd:
@@ -1916,14 +1964,16 @@ def render_settings():
         else:
             try:
                 saved = save_user_certificate_pfx(username, pfx_file.getvalue(), cert_pwd)
+                subj = read_cert_subject(saved)
                 if cert_pronto(saved):
                     st.success(
-                        f"✅ Certificado A1 salvo. CNPJ {saved.cnpj} — emissão liberada para este usuário."
+                        f"✅ Certificado A1 salvo para **{username}**. "
+                        f"CNPJ {saved.cnpj} · {saved.razao_social or subj.get('razao_social') or ''}."
                     )
                 elif cert_arquivos_ok(saved):
                     st.warning(
-                        "PEM salvo, mas ainda falta CNPJ no perfil. "
-                        "Preencha o CNPJ acima e clique em Salvar, ou use um PFX com CNPJ no subject."
+                        "PEM salvo, mas ainda falta CNPJ legível no subject do PFX. "
+                        "Preencha o CNPJ acima e clique em Salvar."
                     )
                 else:
                     st.error("Processou o PFX, mas os arquivos PEM não ficaram no disco.")
