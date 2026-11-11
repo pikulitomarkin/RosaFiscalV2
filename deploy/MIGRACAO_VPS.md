@@ -1,9 +1,11 @@
 # Migração Railway → VPS
 
-## Status atual (VPS `184.107.179.79`) — probe 2026-11-11
+## Status atual (VPS `184.107.179.79`) — probe 2026-11-11T14:42Z
 - **URL oficial de produção:** https://vps12436.panel.icontainer.site/
+- VPS HEAD **`dd5a1d4`** (`cursor/fix-obs-hash-emissao-ddd1` / PR #7; inclui `cf0ba22` / PR #5)
 - Gate: `cutover_ready=true`, `emission_ready=true`, backend **sefin**
-- Smoke Sefin id **3663** OK · `db_emissoes=3663` · `sefin_cert_users≥1`
+- Pós-wipe + reteste cliente: `db_emissoes=459` · `db_usuarios=5` · `sefin_cert_users=2`
+- Smoke Sefin pré-wipe id **3663** OK (histórico)
 - `migration_complete=false` — **Railway ainda vivo** em https://rosafiscalv2.up.railway.app/ (health 200)
 - **Bloqueio residual único:** pausar Railway no painel (`RAILWAY_TOKEN` foi **skipped** pelo usuário)
 - App em `/opt/rosafiscal` via Docker Compose (`app` + Postgres)
