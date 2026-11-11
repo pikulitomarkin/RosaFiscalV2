@@ -162,3 +162,40 @@ def test_prestador_dict_does_not_fallback_to_oficial_identity():
     assert d2["razao_social"] != PRESTADOR_OFICIAL["razao_social"]
     # endereço ainda pode usar default local
     assert d2["municipio"] == DEFAULT_PRESTADOR_ADDRESS["municipio"]
+
+
+def test_display_hides_borrowed_oficial_identity_without_cert(tmp_path, monkeypatch):
+    """Sidebar/settings não devem mostrar Nathalia no login guilherme sem A1."""
+    from src.users import profile as profile_mod
+    from src.users.profile import (
+        PRESTADOR_OFICIAL,
+        UserProfile,
+        display_cnpj_razao,
+        identity_is_borrowed_oficial,
+    )
+
+    monkeypatch.setattr(profile_mod, "DATA_DIR", tmp_path)
+    (tmp_path / "certs" / "guilherme").mkdir(parents=True)
+
+    polluted = UserProfile(
+        username="guilherme",
+        cnpj=PRESTADOR_OFICIAL["cnpj"],
+        razao_social=PRESTADOR_OFICIAL["razao_social"],
+        nome_fantasia="NATHALIA",
+    )
+    assert identity_is_borrowed_oficial(polluted) is True
+    safe = display_cnpj_razao(polluted)
+    assert safe["cnpj"] == ""
+    assert safe["razao_social"] == ""
+    assert "NATHALIA" not in (safe["razao_social"] or "")
+    assert "56169351000185" not in (safe["cnpj"] or "")
+
+    owner = UserProfile(
+        username="nathalia",
+        cnpj=PRESTADOR_OFICIAL["cnpj"],
+        razao_social=PRESTADOR_OFICIAL["razao_social"],
+    )
+    assert identity_is_borrowed_oficial(owner) is False
+    owner_safe = display_cnpj_razao(owner)
+    assert owner_safe["cnpj"] == PRESTADOR_OFICIAL["cnpj"]
+    assert "NATHALIA" in owner_safe["razao_social"]

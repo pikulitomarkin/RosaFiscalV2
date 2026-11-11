@@ -60,6 +60,7 @@ class UserProfile:
     email_contato: str = ""
     telefone: str = ""
     codigo_municipio: str = ""
+    valor_padrao_lote: float = 0.0
     is_admin: bool = False
     is_active: bool = True
 
@@ -135,6 +136,7 @@ def ensure_user_columns() -> None:
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS razao_social VARCHAR(200)",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS nome_fantasia VARCHAR(150)",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cert_password VARCHAR(255)",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS valor_padrao_lote NUMERIC(10, 2) DEFAULT 0",
     ]
     for col, typ in ADDRESS_COLUMNS:
         alters.append(f"ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS {col} {typ}")
@@ -151,6 +153,114 @@ def ensure_user_columns() -> None:
         conn.close()
     except Exception as e:
         app_logger.warning(f"ensure_user_columns falhou: {e}")
+
+
+# Dono canônico do PRESTADOR_OFICIAL no seed multiusuário.
+OFICIAL_OWNER_USERNAME = "nathalia"
+
+
+def _oficial_cnpj_digits() -> str:
+    return re.sub(r"\D", "", PRESTADOR_OFICIAL.get("cnpj") or "")
+
+
+def identity_is_borrowed_oficial(profile: UserProfile) -> bool:
+    """True se o perfil carrega CNPJ/razão da Nathalia sem ser o dono e sem A1 próprio.
+
+    Sintoma clássico no sidebar: login guilherme ainda mostra
+    CNPJ 56169351000185 / NATHALIA… com certificado pendente e pasta de cert vazia
+    (identidade órfã após upload compartilhado ou seed antigo).
+    """
+    if not profile or not (profile.username or "").strip():
+        return False
+    if (profile.username or "").strip().lower() == OFICIAL_OWNER_USERNAME:
+        return False
+    perfil_cnpj = re.sub(r"\D", "", profile.cnpj or "")
+    oficial = _oficial_cnpj_digits()
+    if not oficial or perfil_cnpj != oficial:
+        return False
+    # Sem PEM próprio → identidade oficial é emprestada/órfã.
+    if not cert_arquivos_ok(profile):
+        return True
+    # PEM existe mas subject não é o CNPJ oficial → também não exibir como se fosse dele.
+    subj = read_cert_subject(profile)
+    subj_cnpj = re.sub(r"\D", "", subj.get("cnpj") or "")
+    return bool(subj_cnpj) and subj_cnpj != oficial
+
+
+def display_cnpj_razao(profile: Optional[UserProfile]) -> Dict[str, str]:
+    """CNPJ/razão seguros para UI (sidebar/settings/overview).
+
+    Se a identidade for a oficial emprestada, devolve vazio para a UI mostrar
+    'CNPJ não configurado' em vez de Nathalia.
+    """
+    if not profile:
+        return {"cnpj": "", "razao_social": "", "nome_fantasia": ""}
+    if identity_is_borrowed_oficial(profile):
+        return {"cnpj": "", "razao_social": "", "nome_fantasia": ""}
+    return {
+        "cnpj": (profile.cnpj or "").strip(),
+        "razao_social": (profile.razao_social or "").strip(),
+        "nome_fantasia": (profile.nome_fantasia or "").strip(),
+    }
+
+
+def clear_borrowed_oficial_identity() -> int:
+    """Zera CNPJ/razão/fantasia oficiais em usuários ≠ nathalia sem A1 próprio.
+
+    Idempotente; chamado no boot (ensure_login_users) para limpar poluição
+    que o COALESCE do seed preservava.
+    """
+    ensure_user_columns()
+    dsn = _sync_dsn()
+    if not dsn.startswith("postgresql://"):
+        return 0
+    oficial = _oficial_cnpj_digits()
+    if not oficial:
+        return 0
+    cleared = 0
+    try:
+        usernames = [
+            u
+            for u in list_usernames()
+            if (u or "").strip().lower() != OFICIAL_OWNER_USERNAME
+        ]
+        for username in usernames:
+            profile = get_user_profile(username)
+            if not profile or not identity_is_borrowed_oficial(profile):
+                continue
+            conn = psycopg2.connect(dsn)
+            cur = conn.cursor()
+            cur.execute(
+                """
+                UPDATE usuarios
+                   SET cnpj = '',
+                       razao_social = '',
+                       nome_fantasia = '',
+                       inscricao_municipal = CASE
+                           WHEN COALESCE(inscricao_municipal,'') = %s THEN ''
+                           ELSE inscricao_municipal
+                       END
+                 WHERE username = %s
+                   AND regexp_replace(COALESCE(cnpj,''), '[^0-9]', '', 'g') = %s
+                """,
+                (
+                    PRESTADOR_OFICIAL.get("inscricao_municipal") or "",
+                    username,
+                    oficial,
+                ),
+            )
+            conn.commit()
+            cleared += cur.rowcount or 0
+            cur.close()
+            conn.close()
+            app_logger.warning(
+                f"clear_borrowed_oficial_identity: limpou CNPJ/razão oficiais "
+                f"de usuário={username} (sem A1 próprio)"
+            )
+        return cleared
+    except Exception as e:
+        app_logger.warning(f"clear_borrowed_oficial_identity: {e}")
+        return cleared
 
 
 def get_user_profile(username: str) -> Optional[UserProfile]:
@@ -171,6 +281,7 @@ def get_user_profile(username: str) -> Optional[UserProfile]:
                    COALESCE(bairro,''), COALESCE(municipio,''), COALESCE(uf,''),
                    COALESCE(cep,''), COALESCE(email_contato,''), COALESCE(telefone,''),
                    COALESCE(codigo_municipio,''),
+                   COALESCE(valor_padrao_lote, 0),
                    COALESCE(is_admin,false), COALESCE(is_active,true)
             FROM usuarios WHERE username = %s
             """,
@@ -181,6 +292,10 @@ def get_user_profile(username: str) -> Optional[UserProfile]:
         conn.close()
         if not row:
             return None
+        try:
+            valor_padrao = float(row[18] or 0)
+        except (TypeError, ValueError):
+            valor_padrao = 0.0
         return UserProfile(
             username=row[0],
             nome_completo=row[1] or "",
@@ -200,8 +315,9 @@ def get_user_profile(username: str) -> Optional[UserProfile]:
             email_contato=row[15] or "",
             telefone=row[16] or "",
             codigo_municipio=row[17] or "",
-            is_admin=bool(row[18]),
-            is_active=bool(row[19]),
+            valor_padrao_lote=valor_padrao,
+            is_admin=bool(row[19]),
+            is_active=bool(row[20]),
         )
     except Exception as e:
         app_logger.error(f"get_user_profile: {e}")
@@ -251,7 +367,8 @@ def save_user_profile(profile: UserProfile, *, update_password: Optional[str] = 
             cep = %s,
             email_contato = %s,
             telefone = %s,
-            codigo_municipio = %s
+            codigo_municipio = %s,
+            valor_padrao_lote = %s
         WHERE username = %s
         """,
         (
@@ -272,6 +389,7 @@ def save_user_profile(profile: UserProfile, *, update_password: Optional[str] = 
             profile.email_contato,
             re.sub(r"\D", "", profile.telefone),
             re.sub(r"\D", "", profile.codigo_municipio),
+            max(0.0, float(profile.valor_padrao_lote or 0)),
             profile.username,
         ),
     )
