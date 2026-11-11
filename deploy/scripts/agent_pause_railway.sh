@@ -5,7 +5,8 @@
 # Projeto conhecido (GitHub Deployments):
 #   project  = 0dff8bdf-7c3c-4cda-8ca5-34c48a9aa7a6
 #   environment = d845247a-c997-4fec-bb0d-b0e1cb1ccd76
-#   public URL ainda viva (2026-11-10): https://rosafiscalv2.up.railway.app/
+#   public URL ainda viva (2026-11-11): https://rosafiscalv2.up.railway.app/
+#   RAILWAY_TOKEN foi SKIPPED pelo usuário — caminho preferencial = pause no painel.
 #
 # Uso:
 #   export RAILWAY_TOKEN=...
@@ -17,6 +18,7 @@ cd "$ROOT"
 RAILWAY_PROJECT_ID="${RAILWAY_PROJECT_ID:-0dff8bdf-7c3c-4cda-8ca5-34c48a9aa7a6}"
 RAILWAY_ENVIRONMENT_ID="${RAILWAY_ENVIRONMENT_ID:-d845247a-c997-4fec-bb0d-b0e1cb1ccd76}"
 RAILWAY_PUBLIC_URL="${RAILWAY_PUBLIC_URL:-https://rosafiscalv2.up.railway.app}"
+OFFICIAL_URL="${OFFICIAL_URL:-https://vps12436.panel.icontainer.site/}"
 
 TOKEN="${RAILWAY_TOKEN:-}"
 if [[ -z "$TOKEN" ]]; then
@@ -29,9 +31,10 @@ if [[ -z "$TOKEN" ]]; then
 fi
 if [[ -z "$TOKEN" ]]; then
   echo "RAILWAY_TOKEN ausente (env ou secrets/RAILWAY_TOKEN)." >&2
-  echo "Crie em https://railway.app/account/tokens e rode de novo." >&2
+  echo "Token foi skipped — pause o serviço no painel Railway (não apague DB/volume)." >&2
   echo "Projeto: https://railway.com/project/${RAILWAY_PROJECT_ID}?environmentId=${RAILWAY_ENVIRONMENT_ID}" >&2
-  echo "URL viva agora: ${RAILWAY_PUBLIC_URL}/_stcore/health" >&2
+  echo "URL legada viva: ${RAILWAY_PUBLIC_URL}/_stcore/health" >&2
+  echo "URL oficial produção: ${OFFICIAL_URL}" >&2
   exit 2
 fi
 

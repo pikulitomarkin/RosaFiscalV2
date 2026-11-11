@@ -1,6 +1,7 @@
 # Checklist cutover Railway → VPS
 
-Atualizado com evidência na VPS `184.107.179.79` (API Nacional / Sefin).
+Atualizado com evidência na VPS `184.107.179.79` (API Nacional / Sefin).  
+Probe refeito em **2026-11-11** (agent cutover).
 
 | Requisito | Evidência | Status |
 |-----------|-----------|--------|
@@ -18,12 +19,12 @@ Atualizado com evidência na VPS `184.107.179.79` (API Nacional / Sefin).
 | Deploy na VPS | tip atual + rebuild | **OK** |
 | Seed `nathalia` + `guilherme` | senha `admin` | **OK** |
 | Cert A1 nathalia | `/app/data/certs/nathalia/` CNPJ `56169351000185` | **OK** |
-| Cert A1 guilherme | reenviar PFX na UI | PENDENTE (não bloqueia nathalia) |
+| Cert A1 (gate) | `sefin_cert_users=2` no `cutover_status` | OK (detalhe guilherme: outro agent) |
 | IBGE Santa Rosa | `4317202` | **OK** |
 | Regime SN DPS | `opSimpNac=3` + `regApTribSN=1` | **OK** |
 | Emissão Sefin | id `3663` / chave abaixo | **OK** |
 | Gate cutover | `cutover_ready` + `emission_ready` | **OK** |
-| Desligar Railway | **ainda vivo** `rosafiscalv2.up.railway.app` health=200 | **ÚNICO BLOQUEIO OPS** |
+| Desligar Railway | **ainda vivo** health=200 (probe 2026-11-11) | **ÚNICO BLOQUEIO OPS** |
 
 ## Smoke Sefin (evidência no Postgres)
 
@@ -40,18 +41,24 @@ created_at=2026-11-10 23:50:26 UTC (20:50 America/Sao_Paulo)
 Enum oficial: `opSimpNac` **1=Não optante, 2=MEI, 3=ME/EPP**.  
 Código antigo enviava `2` para ME/EPP → Sefin tratava como MEI → E0160.
 
-## Pause Railway (último passo — bloqueado sem token)
+## Pause Railway (último passo — token dispensado)
 
-Gate VPS aberto. Backup pós-smoke: `20261110_205138`.
+Gate VPS aberto (`cutover_ready=true`, `emission_ready=true`).  
+Backup pós-smoke: `20261110_205138`.  
+`migration_complete` **permanece false** enquanto `railway_live=true`.
 
-**Railway ainda ONLINE (probe 2026-11-10):**
+**Railway ainda ONLINE (probe 2026-11-11):**
 - Health 200: https://rosafiscalv2.up.railway.app/_stcore/health
 - Painel: https://railway.com/project/0dff8bdf-7c3c-4cda-8ca5-34c48a9aa7a6?environmentId=d845247a-c997-4fec-bb0d-b0e1cb1ccd76
 - Probe: `./deploy/scripts/probe_railway_live.sh` (exit 1 = ainda vivo)
+- Gate: `./deploy/scripts/railway_shutdown_gate.sh` → exit **4** enquanto Railway vivo
 
-**Opção A — painel:** pause/stop do serviço no link acima (não apague DB/volume).
+**`RAILWAY_TOKEN` — SKIPPED pelo usuário.** Não aguardar token nem re-solicitar de forma agressiva.  
+Caminho operacional restante: **pause/stop no painel** (Opção A). Não apague DB/volume.
 
-**Opção B — agent/CLI** (precisa `RAILWAY_TOKEN`):
+**Opção A — painel (preferencial agora):** pause/stop do serviço no link do projeto acima.
+
+**Opção B — agent/CLI** (só se o token voltar a ser fornecido):
 
 ```bash
 # https://railway.app/account/tokens
@@ -60,11 +67,12 @@ printf '%s' 'TOKEN' > secrets/RAILWAY_TOKEN && chmod 600 secrets/RAILWAY_TOKEN
 ./deploy/scripts/probe_railway_live.sh   # deve sair 0 (offline)
 ```
 
-URL oficial de produção: https://vps12436.panel.icontainer.site/
+**URL oficial de produção (use esta):** https://vps12436.panel.icontainer.site/  
+URL legada Railway (não usar após cutover): https://rosafiscalv2.up.railway.app/
 
 ## Logins
 
 | Usuário | Senha | CNPJ |
 |---------|-------|------|
 | `nathalia` | `admin` | `56169351000185` |
-| `guilherme` | `admin` | (enviar PFX) |
+| `guilherme` | `admin` | (cert sob outro agent) |

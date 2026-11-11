@@ -559,6 +559,7 @@ def login_page():
     st.title("🔐 Sistema de Emissão NFS-e")
     st.markdown("### Portal de Automação de Notas Fiscais")
     st.caption("API Nacional (Sefin) · Santa Rosa-RS · multiusuário")
+    st.caption("URL oficial: https://vps12436.panel.icontainer.site/")
 
     col1, col2, col3 = st.columns([1, 2, 1])
 
@@ -606,6 +607,7 @@ def render_dashboard():
     """Renderiza dashboard principal."""
     st.sidebar.title("⚙️ Menu Principal")
     st.sidebar.markdown(f"👤 **Usuário:** {st.session_state.username}")
+    st.sidebar.caption("Produção: vps12436.panel.icontainer.site")
     try:
         from src.users.profile import cert_pronto, get_user_profile
         _prof = get_user_profile(st.session_state.username or "")

@@ -43,7 +43,8 @@ if [[ "$RAILWAY_LIVE" == "true" ]]; then
   echo "blocker=${BLOCKER}"
   echo "Health: ${RAILWAY_URL}/_stcore/health"
   echo "Painel: ${RAILWAY_PROJECT}"
-  echo "Pause no painel OU: RAILWAY_TOKEN=... ./deploy/scripts/agent_pause_railway.sh"
+  echo "Preferencial: pause no painel (RAILWAY_TOKEN foi skipped)."
+  echo "Opcional se token existir: ./deploy/scripts/agent_pause_railway.sh"
   echo "URL oficial: https://vps12436.panel.icontainer.site/"
   exit 4
 fi
