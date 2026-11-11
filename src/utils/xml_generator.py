@@ -783,13 +783,13 @@ class NFSeXMLGenerator:
         c_motivo: int = 1,
         x_motivo: str = "Cancelamento de emissao em lote por erro operacional.",
         n_ped_reg_evento: int = 1,
-        assinar_por_id: bool = True,
+        assinar_por_id: bool = False,
     ) -> tuple[str, str]:
         """Gera, assina e comprime pedido de cancelamento e101101.
 
-        Por padrão assina com Reference URI="#Id" (MOC). Se Sefin rejeitar
-        (E0714), o chamador pode repetir com assinar_por_id=False para usar
-        o mesmo XMLDSig envelopado (URI="") já validado na emissão de DPS.
+        Padrão: XMLDSig envelopado URI="" (mesmo da DPS — aceito pela Sefin).
+        assinar_por_id=True tenta Reference URI="#Id" (MOC); em produção a
+        Sefin tem rejeitado com E0714 nesse modo.
         """
         xml, id_ped = self.gerar_xml_pedido_cancelamento(
             chave_acesso,
