@@ -115,6 +115,8 @@ class Usuario(Base):
     email_contato = Column(String(100), nullable=True)
     telefone = Column(String(20), nullable=True)
     codigo_municipio = Column(String(7), nullable=True)
+    # Valor padrão (BRL) para emissão em lote quando o PDF não traz valor
+    valor_padrao_lote = Column(Numeric(10, 2), nullable=True, default=0)
     
     # Status
     is_active = Column(Boolean, default=True)
