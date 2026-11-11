@@ -153,6 +153,114 @@ def ensure_user_columns() -> None:
         app_logger.warning(f"ensure_user_columns falhou: {e}")
 
 
+# Dono canônico do PRESTADOR_OFICIAL no seed multiusuário.
+OFICIAL_OWNER_USERNAME = "nathalia"
+
+
+def _oficial_cnpj_digits() -> str:
+    return re.sub(r"\D", "", PRESTADOR_OFICIAL.get("cnpj") or "")
+
+
+def identity_is_borrowed_oficial(profile: UserProfile) -> bool:
+    """True se o perfil carrega CNPJ/razão da Nathalia sem ser o dono e sem A1 próprio.
+
+    Sintoma clássico no sidebar: login guilherme ainda mostra
+    CNPJ 56169351000185 / NATHALIA… com certificado pendente e pasta de cert vazia
+    (identidade órfã após upload compartilhado ou seed antigo).
+    """
+    if not profile or not (profile.username or "").strip():
+        return False
+    if (profile.username or "").strip().lower() == OFICIAL_OWNER_USERNAME:
+        return False
+    perfil_cnpj = re.sub(r"\D", "", profile.cnpj or "")
+    oficial = _oficial_cnpj_digits()
+    if not oficial or perfil_cnpj != oficial:
+        return False
+    # Sem PEM próprio → identidade oficial é emprestada/órfã.
+    if not cert_arquivos_ok(profile):
+        return True
+    # PEM existe mas subject não é o CNPJ oficial → também não exibir como se fosse dele.
+    subj = read_cert_subject(profile)
+    subj_cnpj = re.sub(r"\D", "", subj.get("cnpj") or "")
+    return bool(subj_cnpj) and subj_cnpj != oficial
+
+
+def display_cnpj_razao(profile: Optional[UserProfile]) -> Dict[str, str]:
+    """CNPJ/razão seguros para UI (sidebar/settings/overview).
+
+    Se a identidade for a oficial emprestada, devolve vazio para a UI mostrar
+    'CNPJ não configurado' em vez de Nathalia.
+    """
+    if not profile:
+        return {"cnpj": "", "razao_social": "", "nome_fantasia": ""}
+    if identity_is_borrowed_oficial(profile):
+        return {"cnpj": "", "razao_social": "", "nome_fantasia": ""}
+    return {
+        "cnpj": (profile.cnpj or "").strip(),
+        "razao_social": (profile.razao_social or "").strip(),
+        "nome_fantasia": (profile.nome_fantasia or "").strip(),
+    }
+
+
+def clear_borrowed_oficial_identity() -> int:
+    """Zera CNPJ/razão/fantasia oficiais em usuários ≠ nathalia sem A1 próprio.
+
+    Idempotente; chamado no boot (ensure_login_users) para limpar poluição
+    que o COALESCE do seed preservava.
+    """
+    ensure_user_columns()
+    dsn = _sync_dsn()
+    if not dsn.startswith("postgresql://"):
+        return 0
+    oficial = _oficial_cnpj_digits()
+    if not oficial:
+        return 0
+    cleared = 0
+    try:
+        usernames = [
+            u
+            for u in list_usernames()
+            if (u or "").strip().lower() != OFICIAL_OWNER_USERNAME
+        ]
+        for username in usernames:
+            profile = get_user_profile(username)
+            if not profile or not identity_is_borrowed_oficial(profile):
+                continue
+            conn = psycopg2.connect(dsn)
+            cur = conn.cursor()
+            cur.execute(
+                """
+                UPDATE usuarios
+                   SET cnpj = '',
+                       razao_social = '',
+                       nome_fantasia = '',
+                       inscricao_municipal = CASE
+                           WHEN COALESCE(inscricao_municipal,'') = %s THEN ''
+                           ELSE inscricao_municipal
+                       END
+                 WHERE username = %s
+                   AND regexp_replace(COALESCE(cnpj,''), '[^0-9]', '', 'g') = %s
+                """,
+                (
+                    PRESTADOR_OFICIAL.get("inscricao_municipal") or "",
+                    username,
+                    oficial,
+                ),
+            )
+            conn.commit()
+            cleared += cur.rowcount or 0
+            cur.close()
+            conn.close()
+            app_logger.warning(
+                f"clear_borrowed_oficial_identity: limpou CNPJ/razão oficiais "
+                f"de usuário={username} (sem A1 próprio)"
+            )
+        return cleared
+    except Exception as e:
+        app_logger.warning(f"clear_borrowed_oficial_identity: {e}")
+        return cleared
+
+
 def get_user_profile(username: str) -> Optional[UserProfile]:
     ensure_user_columns()
     dsn = _sync_dsn()
