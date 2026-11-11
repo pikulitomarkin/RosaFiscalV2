@@ -893,67 +893,88 @@ def render_single_emission():
                     "reg_ap_trib_sn": int(_tax.get("reg_ap_trib_sn") or 1),
                 }
 
-                with st.spinner("⏳ Emitindo NFS-e via API Nacional (Sefin)... Por favor aguarde..."):
-                    try:
+                # Spinner/status só envolvem a chamada à API. UI de sucesso/erro fica
+                # FORA — senão o Streamlit mantém o loading junto do success e a
+                # barra "Running..." parece travada após a emissão.
+                resultado = None
+                erro_emissao = None
+                status_box = st.empty()
+                status_box.info(
+                    "⌛ Emitindo NFS-e via API Nacional (Sefin)... Por favor aguarde..."
+                )
+                try:
+                    with st.spinner(
+                        "⏳ Emitindo NFS-e via API Nacional (Sefin)... Por favor aguarde..."
+                    ):
                         results = asyncio.run(
                             get_nfse_service(st.session_state.username).emitir_nfse_lote(
                                 [registro], config_servico
                             )
                         )
-                        r = results[0]
-                        sucesso = r.status == "sucesso"
+                        resultado = results[0]
+                except Exception as e:
+                    erro_emissao = e
+                    app_logger.error(
+                        f"Erro na emissão individual Sefin: {e}", exc_info=True
+                    )
+                finally:
+                    status_box.empty()
 
-                        if sucesso:
-                            st.success("✅ NFS-e emitida com sucesso!")
+                if erro_emissao is not None:
+                    st.error(f"❌ Erro ao emitir NFS-e: {str(erro_emissao)}")
+                elif resultado is not None:
+                    r = resultado
+                    sucesso = r.status == "sucesso"
 
-                            nfse_data = {
-                                'chave_acesso': r.numero_nfse or r.protocolo or 'N/A',
-                                'numero': r.numero_nfse or 'N/A',
-                                'data_emissao': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                                'tomador_nome': tomador_nome,
-                                'tomador_cpf': tomador_cpf,
-                                'tomador_bairro': tomador_bairro or 'NI',
-                                'tomador_cep': tomador_cep or 'NI',
-                                'tomador_logradouro': tomador_logradouro or 'NI',
-                                'valor': valor_servico,
-                                'iss': valor_servico * (aliquota_iss / 100),
-                                'aliquota_iss': aliquota_iss,
-                                'descricao': hash_paciente if hash_paciente and hash_paciente.strip() else descricao_servico,
-                                'codigo_servico': item_lista.replace(".", ""),
-                                'xml_path': None,
-                                'pdf_path': None,
-                                'link_nfse': r.link_nfse,
-                                'usuario': st.session_state.username,
-                            }
+                    if sucesso:
+                        st.success("✅ NFS-e emitida com sucesso!")
 
-                            st.session_state.emitted_nfse.append(nfse_data)
-                            st.session_state.last_emission = nfse_data
-                            save_emitted_nfse()
+                        nfse_data = {
+                            'chave_acesso': r.numero_nfse or r.protocolo or 'N/A',
+                            'numero': r.numero_nfse or 'N/A',
+                            'data_emissao': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                            'tomador_nome': tomador_nome,
+                            'tomador_cpf': tomador_cpf,
+                            'tomador_bairro': tomador_bairro or 'NI',
+                            'tomador_cep': tomador_cep or 'NI',
+                            'tomador_logradouro': tomador_logradouro or 'NI',
+                            'valor': valor_servico,
+                            'iss': valor_servico * (aliquota_iss / 100),
+                            'aliquota_iss': aliquota_iss,
+                            'descricao': hash_paciente if hash_paciente and hash_paciente.strip() else descricao_servico,
+                            'codigo_servico': item_lista.replace(".", ""),
+                            'xml_path': None,
+                            'pdf_path': None,
+                            'link_nfse': r.link_nfse,
+                            'usuario': st.session_state.username,
+                        }
 
-                            st.markdown("---")
-                            st.markdown("### ✅ NFS-e Emitida com Sucesso!")
+                        st.session_state.emitted_nfse.append(nfse_data)
+                        st.session_state.last_emission = nfse_data
+                        save_emitted_nfse()
 
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                st.metric("Número/Chave", (r.numero_nfse or 'N/A')[:24])
-                            with col2:
-                                st.metric("Valor", f"R$ {valor_servico:,.2f}")
-                            with col3:
-                                st.metric("ISS", f"R$ {valor_servico * (aliquota_iss / 100):,.2f}")
+                        st.markdown("---")
+                        st.markdown("### ✅ NFS-e Emitida com Sucesso!")
 
-                            st.markdown("**🔑 Chave de acesso:**")
-                            st.code(r.numero_nfse or r.protocolo or 'N/A', language=None)
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Número/Chave", (r.numero_nfse or 'N/A')[:24])
+                        with col2:
+                            st.metric("Valor", f"R$ {valor_servico:,.2f}")
+                        with col3:
+                            st.metric("ISS", f"R$ {valor_servico * (aliquota_iss / 100):,.2f}")
 
-                            if r.link_nfse:
-                                st.markdown("**📄 PDF da NFS-e:**")
-                                st.link_button("Baixar PDF da NFS-e", r.link_nfse)
+                        st.markdown("**🔑 Chave de acesso:**")
+                        st.code(r.numero_nfse or r.protocolo or 'N/A', language=None)
 
-                        else:
-                            st.error(f"❌ Erro ao emitir NFS-e: {r.mensagem or 'Erro desconhecido'}")
+                        if r.link_nfse:
+                            st.markdown("**📄 PDF da NFS-e:**")
+                            st.link_button("Baixar PDF da NFS-e", r.link_nfse)
 
-                    except Exception as e:
-                        st.error(f"❌ Erro ao emitir NFS-e: {str(e)}")
-                        app_logger.error(f"Erro na emissão individual Sefin: {e}", exc_info=True)
+                    else:
+                        st.error(
+                            f"❌ Erro ao emitir NFS-e: {r.mensagem or 'Erro desconhecido'}"
+                        )
 
 
 # ============================================================================
