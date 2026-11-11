@@ -180,10 +180,26 @@ else
   fi
 fi
 
+# Streamlit antigo no Railway (ainda pode estar vivo em paralelo à VPS)
+railway_url="https://rosafiscalv2.up.railway.app"
+railway_live=false
+railway_http="000"
+railway_http=$(curl -sk -o /dev/null -w "%{http_code}" --connect-timeout 8 --max-time 15 \
+  "${railway_url}/_stcore/health" || echo 000)
+[[ "$railway_http" == "200" ]] && railway_live=true || true
+migration_complete=false
+if $ready && $emission_ready && [[ "$railway_live" != "true" ]]; then
+  migration_complete=true
+fi
+if $ready && $emission_ready && $railway_live; then
+  blocker='"RAILWAY_STILL_LIVE"'
+fi
+
 json_out=$(cat <<EOF
 {
   "cutover_ready": $(to_json_bool "$ready"),
   "emission_ready": $(to_json_bool "$emission_ready"),
+  "migration_complete": $(to_json_bool "$migration_complete"),
   "emission_backend": "${backend}",
   "app_up": $(to_json_bool "$app_up"),
   "http_8501": $(to_json_bool "$http_ok"),
@@ -202,6 +218,10 @@ json_out=$(cat <<EOF
   "ipm_network_http": "${code}",
   "ipm_emissor_nacional": $(to_json_bool "$ipm_emissor_nacional"),
   "cert_a1_optional": $(to_json_bool "$cert_ok"),
+  "railway_live": $(to_json_bool "$railway_live"),
+  "railway_health_http": "${railway_http}",
+  "railway_url": "${railway_url}",
+  "railway_project": "https://railway.com/project/0dff8bdf-7c3c-4cda-8ca5-34c48a9aa7a6?environmentId=d845247a-c997-4fec-bb0d-b0e1cb1ccd76",
   "blocker": ${blocker},
   "url": "https://vps12436.panel.icontainer.site/",
   "icp_admin": "https://vps12436.panel.icontainer.site:2090/admin"
