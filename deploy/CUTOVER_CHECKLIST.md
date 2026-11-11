@@ -1,12 +1,12 @@
 # Checklist cutover Railway → VPS
 
 Atualizado com evidência na VPS `184.107.179.79` (API Nacional / Sefin).  
-Probe refeito em **2026-11-11** (agent cutover).
+Probe refeito em **2026-11-11T00:35Z** (agent cutover).
 
 | Requisito | Evidência | Status |
 |-----------|-----------|--------|
 | App Docker no ar | `docker compose ps` app Up | OK |
-| Postgres com dados | **3663** `nfse_emissoes` (inclui smoke) | OK |
+| Postgres pós-wipe | **0** `nfse_emissoes` (wipe intencional; users/certs OK) | OK |
 | Histórico JSON | `/app/data/nfse_emitidas.json` | OK |
 | HTTP local | `:8501/_stcore/health` → 200 | OK |
 | HTTPS produção | `https://vps12436.panel.icontainer.site/` → 200 | OK |
@@ -14,17 +14,18 @@ Probe refeito em **2026-11-11** (agent cutover).
 | Backup automático | cron 03:15 | OK |
 | Restore dry-run | backup `20261105_203203` | OK |
 | Backup pós-smoke | `backups/20261110_205138/` | **OK** |
+| Backup pré-wipe | `backups/pre_wipe_20261111_003233/` (3663→0) | **OK** |
 | Root/admin rotacionados | `/root/rosafiscal_rotated_credentials.txt` | OK (ops: cofre) |
 | Branch API nacional | `cursor/api-nacional-multiusuario-ddd1` / PR #3 | OK |
-| Deploy na VPS | tip atual + rebuild | **OK** |
-| Seed `nathalia` + `guilherme` | senha `admin` | **OK** |
+| Deploy multi-tenant VPS | HEAD **`cf0ba22`** (`cursor/deploy-vps-all-fixes-ddd1` / PR #5) | **OK** |
+| Seed `nathalia` + `guilherme` | senha `admin`; `db_usuarios=5` | **OK** |
 | Cert A1 nathalia | `/app/data/certs/nathalia/` CNPJ `56169351000185` | **OK** |
-| Cert A1 (gate) | `sefin_cert_users=2` no `cutover_status` | OK (detalhe guilherme: outro agent) |
+| Cert A1 (gate) | `sefin_cert_users=2` no `cutover_status` | OK |
 | IBGE Santa Rosa | `4317202` | **OK** |
 | Regime SN DPS | `opSimpNac=3` + `regApTribSN=1` | **OK** |
-| Emissão Sefin | id `3663` / chave abaixo | **OK** |
-| Gate cutover | `cutover_ready` + `emission_ready` | **OK** |
-| Desligar Railway | **ainda vivo** health=200 (probe 2026-11-11) | **ÚNICO BLOQUEIO OPS** |
+| Emissão Sefin (pré-wipe) | id `3663` / chave abaixo (histórico) | **OK** (wipe) |
+| Gate cutover | pós-wipe: `cutover_ready=false` / `emission_ready=false` (`db_emissoes=0`, blocker=other) | **pendente re-smoke** |
+| Desligar Railway | **ainda vivo** health=200 (probe 2026-11-11T00:35Z) | **ÚNICO BLOQUEIO OPS** |
 
 ## Smoke Sefin (evidência no Postgres)
 
@@ -41,17 +42,24 @@ created_at=2026-11-10 23:50:26 UTC (20:50 America/Sao_Paulo)
 Enum oficial: `opSimpNac` **1=Não optante, 2=MEI, 3=ME/EPP**.  
 Código antigo enviava `2` para ME/EPP → Sefin tratava como MEI → E0160.
 
+## Progresso não-token (2026-11-11T00:35Z)
+
+- VPS em **`cf0ba22`**: tenant isolation + spinner + cert/sidebar + valor padrão lote (PR #5).
+- Emissões limpas (`nfse_emissoes` 3663→**0**); usuários/certs preservados (`db_usuarios=5`, `sefin_cert_users=2`).
+- App/HTTPS OK; `railway_live=true` → `migration_complete=false`.
+- Gate pós-wipe fecha `cutover_ready`/`emission_ready` até novo smoke de emissão.
+
 ## Pause Railway (último passo — token dispensado)
 
-Gate VPS aberto (`cutover_ready=true`, `emission_ready=true`).  
-Backup pós-smoke: `20261110_205138`.  
+Backup pós-smoke: `20261110_205138`. Backup pré-wipe: `pre_wipe_20261111_003233`.  
 `migration_complete` **permanece false** enquanto `railway_live=true`.
 
-**Railway ainda ONLINE (probe 2026-11-11):**
+**Railway ainda ONLINE (probe 2026-11-11T00:35Z):**
 - Health 200: https://rosafiscalv2.up.railway.app/_stcore/health
 - Painel: https://railway.com/project/0dff8bdf-7c3c-4cda-8ca5-34c48a9aa7a6?environmentId=d845247a-c997-4fec-bb0d-b0e1cb1ccd76
 - Probe: `./deploy/scripts/probe_railway_live.sh` (exit 1 = ainda vivo)
-- Gate: `./deploy/scripts/railway_shutdown_gate.sh` → exit **4** enquanto Railway vivo
+- Gate: `./deploy/scripts/railway_shutdown_gate.sh` → `railway_live=true`, exit **4**
+- `RAILWAY_TOKEN` ausente neste agent (`agent_pause_railway.sh` exit 2)
 
 **`RAILWAY_TOKEN` — SKIPPED pelo usuário.** Não aguardar token nem re-solicitar de forma agressiva.  
 Caminho operacional restante: **pause/stop no painel** (Opção A). Não apague DB/volume.
