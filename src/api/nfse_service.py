@@ -615,26 +615,46 @@ class NFSeService:
         Cancela NFS-e via evento Sefin e101101 (POST .../nfse/{chave}/eventos).
 
         Usa o certificado A1 do serviço (mTLS + assinatura do pedRegEvento).
+        Tenta assinatura por Id; em E0714 refaz com URI="" (mesmo padrão da DPS).
         """
         cnpj = re.sub(r"\D", "", cnpj_autor or self.prestador_config.get("cnpj") or "")
         if not cnpj:
             raise ValueError("CNPJ do autor do cancelamento não configurado")
 
-        pedido_b64, id_ped = self.xml_generator.gerar_pedido_cancelamento_comprimido(
-            chave_acesso,
-            cnpj,
-            c_motivo=c_motivo,
-            x_motivo=x_motivo,
-            n_ped_reg_evento=n_ped_reg_evento,
-        )
-        app_logger.info(
-            f"Cancelando NFS-e chave={chave_acesso} idPed={id_ped} cnpj={cnpj} motivo={c_motivo}"
-        )
-        resultado = await self.client.registrar_evento(chave_acesso, pedido_b64)
-        resultado = dict(resultado or {})
-        resultado["idPedReg"] = id_ped
-        resultado["chaveAcesso"] = "".join(ch for ch in chave_acesso if ch.isdigit())
-        return resultado
+        async def _enviar(assinar_por_id: bool) -> Dict[str, Any]:
+            pedido_b64, id_ped = self.xml_generator.gerar_pedido_cancelamento_comprimido(
+                chave_acesso,
+                cnpj,
+                c_motivo=c_motivo,
+                x_motivo=x_motivo,
+                n_ped_reg_evento=n_ped_reg_evento,
+                assinar_por_id=assinar_por_id,
+            )
+            app_logger.info(
+                f"Cancelando NFS-e chave={chave_acesso} idPed={id_ped} cnpj={cnpj} "
+                f"motivo={c_motivo} assinar_por_id={assinar_por_id}"
+            )
+            resultado = await self.client.registrar_evento(chave_acesso, pedido_b64)
+            resultado = dict(resultado or {})
+            resultado["idPedReg"] = id_ped
+            resultado["chaveAcesso"] = "".join(ch for ch in chave_acesso if ch.isdigit())
+            resultado["assinar_por_id"] = assinar_por_id
+            return resultado
+
+        try:
+            return await _enviar(True)
+        except httpx.HTTPStatusError as e:
+            body = ""
+            try:
+                body = str(e.response.json())
+            except Exception:
+                body = e.response.text or ""
+            if e.response.status_code == 400 and "E0714" in body:
+                app_logger.warning(
+                    "E0714 na assinatura por Id do pedRegEvento — retry com URI=''"
+                )
+                return await _enviar(False)
+            raise
 
     async def consultar_status_api(self) -> bool:
         """

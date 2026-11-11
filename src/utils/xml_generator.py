@@ -783,8 +783,14 @@ class NFSeXMLGenerator:
         c_motivo: int = 1,
         x_motivo: str = "Cancelamento de emissao em lote por erro operacional.",
         n_ped_reg_evento: int = 1,
+        assinar_por_id: bool = True,
     ) -> tuple[str, str]:
-        """Gera, assina e comprime pedido de cancelamento e101101."""
+        """Gera, assina e comprime pedido de cancelamento e101101.
+
+        Por padrão assina com Reference URI="#Id" (MOC). Se Sefin rejeitar
+        (E0714), o chamador pode repetir com assinar_por_id=False para usar
+        o mesmo XMLDSig envelopado (URI="") já validado na emissão de DPS.
+        """
         xml, id_ped = self.gerar_xml_pedido_cancelamento(
             chave_acesso,
             cnpj_autor,
@@ -792,7 +798,10 @@ class NFSeXMLGenerator:
             x_motivo=x_motivo,
             n_ped_reg_evento=n_ped_reg_evento,
         )
-        xml_assinado = self.assinar_xml_por_id(xml, id_ped)
+        if assinar_por_id:
+            xml_assinado = self.assinar_xml_por_id(xml, id_ped)
+        else:
+            xml_assinado = self.assinar_xml(xml)
         return self.comprimir_e_codificar(xml_assinado), id_ped
 
     def gerar_lote_comprimido_assinado(self, nfse_requests: list[NFSeRequest]) -> list[str]:
