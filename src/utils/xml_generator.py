@@ -143,9 +143,14 @@ class NFSeXMLGenerator:
             toma_elem = SubElement(inf_dps, "toma")
             self._add_tomador_v101(toma_elem, nfse_request.tomador)
         
-        # 11. serv - Dados do Serviço
+        # 11. serv - Dados do Serviço (inclui infoCompl/xInfComp = observação DANFSE)
         serv_elem = SubElement(inf_dps, "serv")
-        self._add_servico_v101(serv_elem, nfse_request.servico, c_mun_prestacao=c_mun)
+        self._add_servico_v101(
+            serv_elem,
+            nfse_request.servico,
+            c_mun_prestacao=c_mun,
+            info_comp=self._compose_info_comp(nfse_request),
+        )
         
         # 12. valores - Valores e tributos
         valores_elem = SubElement(inf_dps, "valores")
@@ -226,12 +231,50 @@ class NFSeXMLGenerator:
         # xNome - Nome
         SubElement(parent, "xNome").text = tomador.nome
     
+    @staticmethod
+    def _compose_info_comp(nfse_request: NFSeRequest) -> Optional[str]:
+        """
+        Monta texto de observação (DANFSE Informações Complementares).
+
+        Vai em serv/infoCompl/xInfComp (XSD v1.01). TSDescInfCompl NÃO aceita
+        quebra de linha — colapsamos whitespace. Inclui hash do paciente /
+        transação e discriminação adicional quando houver.
+        """
+        parts: list[str] = []
+        hash_tx = (nfse_request.hash_transacao or "").strip()
+        if hash_tx.upper() in ("N/A", "NA", "-", "NONE", "NULL"):
+            hash_tx = ""
+        discr = (getattr(nfse_request.servico, "discriminacao", None) or "").strip()
+        outras = (nfse_request.outras_informacoes or "").strip()
+
+        if hash_tx:
+            # Evita prefixar se o hash já está explícito na discriminação/outras
+            blob = f"{discr} {outras}"
+            if hash_tx not in blob:
+                parts.append(f"Hash do Paciente: {hash_tx}")
+
+        if discr:
+            parts.append(discr)
+        if outras and outras not in discr:
+            parts.append(outras)
+
+        if not parts:
+            return None
+
+        # Colapsa \n/\t/espaços — xInfComp rejeita quebra de linha (cStat 1235)
+        text = " | ".join(parts)
+        text = " ".join(text.split()).strip()
+        if not text:
+            return None
+        return text[:2000]
+
     def _add_servico_v101(
         self,
         parent: Element,
         servico: Servico,
         *,
         c_mun_prestacao: str = "4317202",
+        info_comp: Optional[str] = None,
     ):
         """Adiciona dados do serviço conforme XSD v1.01."""
         
@@ -270,6 +313,15 @@ class NFSeXMLGenerator:
         
         # 4. xDescServ - Descrição do Serviço (dentro de cServ)
         SubElement(c_serv_elem, "xDescServ").text = servico.descricao
+
+        # 5. infoCompl/xInfComp — Observação / Informações Complementares (último filho de serv)
+        # Sem este campo a DANFSE oficial fica com observação vazia mesmo com hash em xDescServ.
+        texto_comp = (info_comp or "").strip()
+        if not texto_comp and servico.discriminacao:
+            texto_comp = " ".join(str(servico.discriminacao).split()).strip()
+        if texto_comp:
+            info_compl = SubElement(parent, "infoCompl")
+            SubElement(info_compl, "xInfComp").text = texto_comp[:2000]
     
     def _add_valores_v101(self, parent: Element, servico: Servico):
         """Adiciona valores conforme XSD v1.01."""
